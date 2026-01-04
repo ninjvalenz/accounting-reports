@@ -707,6 +707,166 @@
   flex: 1;
 }
 
+/* Cost Analysis Table */
+.cost-table-container {
+  overflow-x: auto;
+}
+
+.cost-table .total-cell {
+  background-color: #f0f0f0;
+  font-weight: 600;
+}
+
+/* Cost Analysis Edit Mode */
+.edit-btn {
+  padding: 6px 12px;
+  background-color: #4299e1;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background-color 0.2s;
+}
+
+.edit-btn:hover:not(:disabled) {
+  background-color: #3182ce;
+}
+
+.edit-btn:disabled {
+  background-color: #a0aec0;
+  cursor: not-allowed;
+}
+
+.edit-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.save-btn {
+  padding: 6px 12px;
+  background-color: #48bb78;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background-color 0.2s;
+}
+
+.save-btn:hover:not(:disabled) {
+  background-color: #38a169;
+}
+
+.save-btn:disabled {
+  background-color: #a0aec0;
+  cursor: not-allowed;
+}
+
+.cancel-btn {
+  padding: 6px 12px;
+  background-color: #e53e3e;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background-color 0.2s;
+}
+
+.cancel-btn:hover:not(:disabled) {
+  background-color: #c53030;
+}
+
+.cancel-btn:disabled {
+  background-color: #a0aec0;
+  cursor: not-allowed;
+}
+
+.edit-hint {
+  background-color: #ebf8ff;
+  border: 1px solid #90cdf4;
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: #2b6cb0;
+}
+
+.editable-indicator {
+  margin-left: 4px;
+  font-size: 11px;
+}
+
+.editable-cell {
+  background-color: #fffaf0 !important;
+  position: relative;
+}
+
+.editable-cell.changed {
+  background-color: #fefcbf !important;
+}
+
+.cost-table td.changed {
+  background-color: #fefcbf !important;
+}
+
+.cost-table .total-cell.changed {
+  background-color: #faf089 !important;
+}
+
+.input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.currency-prefix {
+  color: #718096;
+  font-size: 13px;
+}
+
+.cost-input {
+  width: 100px;
+  padding: 4px 8px;
+  border: 1px solid #cbd5e0;
+  border-radius: 4px;
+  font-size: 13px;
+  text-align: right;
+  background-color: white;
+}
+
+.cost-input:focus {
+  outline: none;
+  border-color: #4299e1;
+  box-shadow: 0 0 0 2px rgba(66, 153, 225, 0.2);
+}
+
+.save-message {
+  padding: 10px 16px;
+  margin: 0 0 12px 0;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.save-message.success {
+  background-color: #c6f6d5;
+  color: #276749;
+  border: 1px solid #9ae6b4;
+}
+
+.save-message.error {
+  background-color: #fed7d7;
+  color: #c53030;
+  border: 1px solid #fc8181;
+}
+
+.save-message.info {
+  background-color: #e2e8f0;
+  color: #4a5568;
+  border: 1px solid #cbd5e0;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .app-header {

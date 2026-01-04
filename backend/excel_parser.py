@@ -421,6 +421,57 @@ def process_sales_by_fpr(filepath, upload_id, months_years_set):
     print(f"   ✅ Saved {count} sales by FPR records")
     return count
 
+def process_cost_data(filepath, upload_id, months_years_set):
+    """Process cost data (Fuel & LEC) from Dashboard-1 sheet (rows 110-116)"""
+    print("\n💰 Processing Cost Data (Fuel & LEC)...")
+    
+    from openpyxl import load_workbook
+    
+    wb = load_workbook(filepath, data_only=True)
+    ws = wb['Dashboard-1']
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    count = 0
+    # Read rows 110-116 (cost data rows)
+    for row in range(110, 120):  # Check a few extra rows in case
+        month_cell = ws.cell(row=row, column=1).value  # Column A - Month
+        fuel = ws.cell(row=row, column=2).value  # Column B - Fuel
+        lec = ws.cell(row=row, column=3).value  # Column C - LEC
+        
+        if not month_cell or not isinstance(month_cell, str):
+            continue
+            
+        # Parse month like "Jan'25"
+        month_name, year = parse_month(month_cell)
+        if not month_name:
+            continue
+        
+        # Get or create year and month
+        year_id = get_or_create_year(cursor, year)
+        month_id = get_month_id(cursor, month_name)
+        
+        if not month_id:
+            continue
+        
+        fuel = 0 if not fuel or pd.isna(fuel) else float(fuel)
+        lec = 0 if not lec or pd.isna(lec) else float(lec)
+        
+        # Insert or update record
+        cursor.execute('''
+            INSERT OR REPLACE INTO cost_data (upload_id, year_id, month_id, fuel, lec)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (upload_id, year_id, month_id, fuel, lec))
+        count += 1
+        
+        months_years_set.add(f"{month_name} {year}")
+    
+    conn.commit()
+    conn.close()
+    print(f"   ✅ Saved {count} cost data records")
+    return count
+
 def process_excel_file(filepath):
     """Main function to process entire Excel file"""
     import os
@@ -453,6 +504,9 @@ def process_excel_file(filepath):
         
         process_sales_by_fpr(filepath, upload_id, months_years_set)
         sheets_processed.append("SALES BY FPR")
+        
+        process_cost_data(filepath, upload_id, months_years_set)
+        sheets_processed.append("Dashboard-1 (Cost Data)")
         
         # Sort months_years for consistent display
         months_years_list = sorted(list(months_years_set), 

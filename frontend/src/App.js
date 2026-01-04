@@ -10,6 +10,7 @@ import YoYGrowth from './components/YoYGrowth';
 import MoMGrowth from './components/MoMGrowth';
 import SalesByLocationSalesman from './components/SalesByLocationSalesman';
 import SalesByType from './components/SalesByType';
+import CostAnalysis from './components/CostAnalysis';
 import UploadHistory from './components/UploadHistory';
 
 const API_BASE_URL = 'http://localhost:5001/api';
@@ -142,6 +143,10 @@ function App() {
                 />
                 <SalesByType 
                   key={`sales-type-${refreshKey}`}
+                  availableMonths={availableMonths} 
+                />
+                <CostAnalysis 
+                  key={`cost-${refreshKey}`}
                   availableMonths={availableMonths} 
                 />
               </div>

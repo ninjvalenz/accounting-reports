@@ -153,6 +153,7 @@ def delete_upload(upload_id):
         cursor.execute('DELETE FROM working_days WHERE upload_id = ?', (upload_id,))
         cursor.execute('DELETE FROM production_data WHERE upload_id = ?', (upload_id,))
         cursor.execute('DELETE FROM sales_by_fpr WHERE upload_id = ?', (upload_id,))
+        cursor.execute('DELETE FROM cost_data WHERE upload_id = ?', (upload_id,))
         
         # Delete the upload record
         cursor.execute('DELETE FROM file_uploads WHERE id = ?', (upload_id,))
@@ -1055,6 +1056,218 @@ def get_sales_by_type():
         'upload_id': latest_upload_id,
         'data': by_type,
         'total': round(total, 2)
+    })
+
+@app.route('/api/cost-analysis', methods=['GET', 'PUT'])
+def cost_analysis():
+    """GET: Retrieve Cost Analysis data, PUT: Update Fuel/LEC values"""
+    if request.method == 'PUT':
+        return update_cost_analysis()
+    return get_cost_analysis()
+
+def update_cost_analysis():
+    """Update Fuel and LEC values for a specific month"""
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    
+    year = data.get('year')
+    month = data.get('month')  # month name like 'January'
+    fuel = data.get('fuel')
+    lec = data.get('lec')
+    
+    if not year or not month:
+        return jsonify({'error': 'Year and month are required'}), 400
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Get latest upload ID
+        latest_upload_id = get_latest_upload_id()
+        if not latest_upload_id:
+            conn.close()
+            return jsonify({'error': 'No data available'}), 404
+        
+        # Get year_id
+        cursor.execute('SELECT id FROM years WHERE year = ?', (year,))
+        year_row = cursor.fetchone()
+        if not year_row:
+            conn.close()
+            return jsonify({'error': f'Year {year} not found'}), 404
+        year_id = year_row['id']
+        
+        # Get month_id
+        cursor.execute('SELECT id FROM months WHERE name = ?', (month,))
+        month_row = cursor.fetchone()
+        if not month_row:
+            conn.close()
+            return jsonify({'error': f'Month {month} not found'}), 404
+        month_id = month_row['id']
+        
+        # Check if record exists
+        cursor.execute('''
+            SELECT id FROM cost_data 
+            WHERE upload_id = ? AND year_id = ? AND month_id = ?
+        ''', (latest_upload_id, year_id, month_id))
+        existing = cursor.fetchone()
+        
+        if existing:
+            # Update existing record
+            update_parts = []
+            params = []
+            
+            if fuel is not None:
+                update_parts.append('fuel = ?')
+                params.append(fuel)
+            if lec is not None:
+                update_parts.append('lec = ?')
+                params.append(lec)
+            
+            if update_parts:
+                params.extend([latest_upload_id, year_id, month_id])
+                cursor.execute(f'''
+                    UPDATE cost_data 
+                    SET {', '.join(update_parts)}
+                    WHERE upload_id = ? AND year_id = ? AND month_id = ?
+                ''', params)
+        else:
+            # Insert new record
+            cursor.execute('''
+                INSERT INTO cost_data (upload_id, year_id, month_id, fuel, lec)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (latest_upload_id, year_id, month_id, fuel or 0, lec or 0))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Cost data updated for {month} {year}',
+            'year': year,
+            'month': month,
+            'fuel': fuel,
+            'lec': lec
+        })
+        
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 500
+
+def get_cost_analysis():
+    """Get Cost Analysis data (Fuel & LEC) with calculated metrics
+    
+    Returns monthly Fuel, LEC, Total, Cost Per Ctn, and % Of Revenue
+    Includes all months that have sales data (even if no cost data exists yet)
+    """
+    year = request.args.get('year', 2025, type=int)
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Get latest upload ID
+    latest_upload_id = get_latest_upload_id()
+    if not latest_upload_id:
+        conn.close()
+        return jsonify({'error': 'No data available. Please upload an Excel file first.'}), 404
+    
+    # Get year_id
+    cursor.execute('SELECT id FROM years WHERE year = ?', (year,))
+    year_row = cursor.fetchone()
+    if not year_row:
+        conn.close()
+        return jsonify({'error': f'Year {year} not found'}), 404
+    year_id = year_row['id']
+    
+    # Get all months that have sales data for this year
+    cursor.execute('''
+        SELECT DISTINCT 
+            m.id as month_id,
+            m.name as month_name,
+            m.month_number,
+            m.short_name
+        FROM sales_data sd
+        JOIN months m ON sd.month_id = m.id
+        WHERE sd.year_id = ? AND sd.upload_id = ?
+        ORDER BY m.month_number
+    ''', (year_id, latest_upload_id))
+    
+    months_with_sales = cursor.fetchall()
+    
+    # Get cost data
+    cursor.execute('''
+        SELECT 
+            month_id,
+            fuel,
+            lec
+        FROM cost_data
+        WHERE year_id = ? AND upload_id = ?
+    ''', (year_id, latest_upload_id))
+    
+    cost_by_month = {}
+    for row in cursor.fetchall():
+        cost_by_month[row['month_id']] = {
+            'fuel': row['fuel'] or 0,
+            'lec': row['lec'] or 0
+        }
+    
+    # Get sales data (total qty and amount) per month for calculations
+    cursor.execute('''
+        SELECT 
+            m.id as month_id,
+            COALESCE(SUM(sd.qty_actual), 0) as total_qty,
+            COALESCE(SUM(sd.amount_actual), 0) as total_amount
+        FROM sales_data sd
+        JOIN months m ON sd.month_id = m.id
+        WHERE sd.year_id = ? AND sd.upload_id = ?
+        GROUP BY m.id
+    ''', (year_id, latest_upload_id))
+    
+    sales_by_month = {}
+    for row in cursor.fetchall():
+        sales_by_month[row['month_id']] = {
+            'total_qty': row['total_qty'],
+            'total_amount': row['total_amount']
+        }
+    
+    conn.close()
+    
+    # Build result - include all months with sales data
+    months_data = []
+    for month_row in months_with_sales:
+        month_id = month_row['month_id']
+        month_num = month_row['month_number']
+        
+        # Get cost data for this month (or defaults)
+        cost = cost_by_month.get(month_id, {'fuel': 0, 'lec': 0})
+        fuel = cost['fuel']
+        lec = cost['lec']
+        total = fuel + lec
+        
+        # Get sales data for this month
+        sales = sales_by_month.get(month_id, {'total_qty': 0, 'total_amount': 0})
+        total_qty = sales['total_qty']
+        total_amount = sales['total_amount']
+        
+        # Calculate Cost Per Ctn and % Of Revenue
+        cost_per_ctn = total / total_qty if total_qty > 0 else 0
+        pct_of_revenue = (total / total_amount * 100) if total_amount > 0 else 0
+        
+        months_data.append({
+            'month': month_row['month_name'],
+            'month_short': f"{month_row['short_name']}'{str(year)[2:]}",
+            'fuel': round(fuel, 2),
+            'lec': round(lec, 2),
+            'total': round(total, 2),
+            'cost_per_ctn': round(cost_per_ctn, 2),
+            'pct_of_revenue': round(pct_of_revenue, 0)
+        })
+    
+    return jsonify({
+        'year': year,
+        'upload_id': latest_upload_id,
+        'data': months_data
     })
 
 @app.route('/api/health', methods=['GET'])

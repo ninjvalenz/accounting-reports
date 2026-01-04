@@ -166,6 +166,22 @@ def init_database():
         )
     ''')
     
+    # Cost data (Fuel & LEC from Dashboard-1)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS cost_data (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            upload_id INTEGER NOT NULL,
+            year_id INTEGER NOT NULL,
+            month_id INTEGER NOT NULL,
+            fuel REAL DEFAULT 0,
+            lec REAL DEFAULT 0,
+            FOREIGN KEY (upload_id) REFERENCES file_uploads(id),
+            FOREIGN KEY (year_id) REFERENCES years(id),
+            FOREIGN KEY (month_id) REFERENCES months(id),
+            UNIQUE(upload_id, year_id, month_id)
+        )
+    ''')
+    
     # ========== PRE-POPULATE MONTHS ==========
     
     months_data = [
