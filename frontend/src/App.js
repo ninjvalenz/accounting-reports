@@ -6,6 +6,7 @@ import ComparisonSales from './components/ComparisonSales';
 import ComparisonProduction from './components/ComparisonProduction';
 import SalesCategoryWise from './components/SalesCategoryWise';
 import ProductionCategoryWise from './components/ProductionCategoryWise';
+import YoYGrowth from './components/YoYGrowth';
 import UploadHistory from './components/UploadHistory';
 
 const API_BASE_URL = 'http://localhost:5001/api';
@@ -75,7 +76,7 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>Sales Performance Dashboard 2025</h1>
+        <h1>Sales Performance Dashboard</h1>
         <nav className="app-nav">
           <button 
             className={`nav-btn ${currentPage === 'dashboard' ? 'active' : ''}`}
@@ -122,6 +123,10 @@ function App() {
                 />
                 <ProductionCategoryWise 
                   key={`prod-cat-${refreshKey}`}
+                  availableMonths={availableMonths} 
+                />
+                <YoYGrowth 
+                  key={`yoy-${refreshKey}`}
                   availableMonths={availableMonths} 
                 />
               </div>

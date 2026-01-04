@@ -652,6 +652,146 @@ def get_production_category_wise():
         }
     })
 
+@app.route('/api/yoy-growth', methods=['GET'])
+def get_yoy_growth():
+    """Get YoY (Year over Year) Growth data from latest upload
+    
+    Shows Sum of Qty-Actual and Sum of Amount (US$) by Product Category,
+    comparing years side by side for selected months.
+    """
+    months_param = request.args.get('months', 'July')  # comma-separated months
+    
+    # Parse comma-separated values
+    month_names = [m.strip() for m in months_param.split(',') if m.strip()]
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Get latest upload ID
+    latest_upload_id = get_latest_upload_id()
+    if not latest_upload_id:
+        conn.close()
+        return jsonify({'error': 'No data available. Please upload an Excel file first.'}), 404
+    
+    # Get all available years
+    cursor.execute('''
+        SELECT DISTINCT y.id, y.year 
+        FROM years y
+        JOIN sales_data sd ON y.id = sd.year_id
+        WHERE sd.upload_id = ?
+        ORDER BY y.year
+    ''', (latest_upload_id,))
+    years_data = cursor.fetchall()
+    years = [row['year'] for row in years_data]
+    year_ids = [row['id'] for row in years_data]
+    
+    if not year_ids:
+        conn.close()
+        return jsonify({'error': 'No years found'}), 404
+    
+    # Get month_ids
+    month_ids = []
+    for month_name in month_names:
+        cursor.execute('SELECT id FROM months WHERE name = ?', (month_name,))
+        month_row = cursor.fetchone()
+        if month_row:
+            month_ids.append(month_row['id'])
+    
+    if not month_ids:
+        conn.close()
+        return jsonify({'error': 'No valid months found'}), 404
+    
+    # Build placeholders
+    month_placeholders = ','.join(['?' for _ in month_ids])
+    
+    # Get data grouped by category and year
+    query = f'''
+        SELECT 
+            pc.name as category,
+            y.year as year,
+            COALESCE(SUM(sd.qty_actual), 0) as qty_actual,
+            COALESCE(SUM(sd.amount_actual), 0) as amount_actual
+        FROM sales_data sd
+        JOIN products p ON sd.product_id = p.id
+        JOIN product_categories pc ON p.category_id = pc.id
+        JOIN years y ON sd.year_id = y.id
+        WHERE sd.month_id IN ({month_placeholders}) 
+          AND sd.upload_id = ?
+        GROUP BY pc.id, pc.name, y.year
+        ORDER BY pc.name, y.year
+    '''
+    
+    params = month_ids + [latest_upload_id]
+    cursor.execute(query, params)
+    
+    # Organize data by category
+    category_data = {}
+    year_totals_qty = {year: 0 for year in years}
+    year_totals_amount = {year: 0 for year in years}
+    
+    for row in cursor.fetchall():
+        category = row['category']
+        year = row['year']
+        qty = row['qty_actual']
+        amount = row['amount_actual']
+        
+        if category not in category_data:
+            category_data[category] = {
+                'category': category,
+                'qty_by_year': {y: 0 for y in years},
+                'amount_by_year': {y: 0 for y in years}
+            }
+        
+        category_data[category]['qty_by_year'][year] = qty
+        category_data[category]['amount_by_year'][year] = amount
+        year_totals_qty[year] += qty
+        year_totals_amount[year] += amount
+    
+    conn.close()
+    
+    # Convert to list and calculate YoY growth percentages
+    categories = []
+    for cat_name, cat_data in sorted(category_data.items()):
+        cat_entry = {
+            'category': cat_name,
+            'qty_by_year': {str(y): round(cat_data['qty_by_year'][y], 2) for y in years},
+            'amount_by_year': {str(y): round(cat_data['amount_by_year'][y], 2) for y in years}
+        }
+        
+        # Calculate YoY growth if we have 2+ years
+        if len(years) >= 2:
+            prev_year = years[-2]
+            curr_year = years[-1]
+            prev_qty = cat_data['qty_by_year'][prev_year]
+            curr_qty = cat_data['qty_by_year'][curr_year]
+            prev_amount = cat_data['amount_by_year'][prev_year]
+            curr_amount = cat_data['amount_by_year'][curr_year]
+            
+            cat_entry['qty_growth_pct'] = round(((curr_qty - prev_qty) / prev_qty * 100), 2) if prev_qty > 0 else None
+            cat_entry['amount_growth_pct'] = round(((curr_amount - prev_amount) / prev_amount * 100), 2) if prev_amount > 0 else None
+        
+        categories.append(cat_entry)
+    
+    # Calculate totals growth
+    totals = {
+        'qty_by_year': {str(y): round(year_totals_qty[y], 2) for y in years},
+        'amount_by_year': {str(y): round(year_totals_amount[y], 2) for y in years}
+    }
+    
+    if len(years) >= 2:
+        prev_year = years[-2]
+        curr_year = years[-1]
+        totals['qty_growth_pct'] = round(((year_totals_qty[curr_year] - year_totals_qty[prev_year]) / year_totals_qty[prev_year] * 100), 2) if year_totals_qty[prev_year] > 0 else None
+        totals['amount_growth_pct'] = round(((year_totals_amount[curr_year] - year_totals_amount[prev_year]) / year_totals_amount[prev_year] * 100), 2) if year_totals_amount[prev_year] > 0 else None
+    
+    return jsonify({
+        'years': years,
+        'months': month_names,
+        'upload_id': latest_upload_id,
+        'categories': categories,
+        'totals': totals
+    })
+
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""

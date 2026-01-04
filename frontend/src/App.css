@@ -630,6 +630,24 @@
   color: #2b6cb0;
 }
 
+/* YoY Growth Tables */
+.yoy-tables {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.yoy-table-container {
+  overflow-x: auto;
+}
+
+.yoy-table-container h4 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  color: #4a5568;
+  font-weight: 600;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .app-header {
@@ -677,5 +695,9 @@
   .checkbox-label {
     padding: 3px 6px;
     font-size: 12px;
+  }
+
+  .yoy-tables {
+    grid-template-columns: 1fr;
   }
 }
