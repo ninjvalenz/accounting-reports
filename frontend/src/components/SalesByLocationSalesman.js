@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
+import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const API_BASE_URL = 'http://localhost:5001/api';
+
+// Colors for the pie chart
+const COLORS = ['#3182ce', '#ed8936', '#48bb78', '#ecc94b', '#9f7aea', '#ed64a6', '#38b2ac', '#fc8181'];
 
 function SalesByLocationSalesman({ availableMonths }) {
   const [selectedYear, setSelectedYear] = useState(null);
@@ -76,10 +80,62 @@ function SalesByLocationSalesman({ availableMonths }) {
     });
   };
 
+  const formatCurrency = (value) => {
+    if (value === null || value === undefined) return '-';
+    return '$' + value.toLocaleString('en-US', { 
+      minimumFractionDigits: 0, 
+      maximumFractionDigits: 0 
+    });
+  };
+
+  // Custom label for pie chart
+  const renderCustomLabel = ({ name, value, percent }) => {
+    return `${name}, ${formatCurrency(value)}, ${(percent * 100).toFixed(0)}%`;
+  };
+
+  // Custom tooltip for pie chart
+  const CustomTooltip = ({ active, payload }) => {
+    if (active && payload && payload.length) {
+      const data = payload[0];
+      return (
+        <div style={{
+          background: 'white',
+          padding: '10px 14px',
+          border: '1px solid #e2e8f0',
+          borderRadius: '6px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+        }}>
+          <p style={{ margin: 0, fontWeight: 600, color: data.payload.fill }}>
+            {data.name}
+          </p>
+          <p style={{ margin: '4px 0 0 0', color: '#4a5568' }}>
+            Amount: <strong>{formatCurrency(data.value)}</strong>
+          </p>
+          <p style={{ margin: '4px 0 0 0', color: '#718096' }}>
+            Share: <strong>{(data.payload.percent * 100).toFixed(1)}%</strong>
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  // Prepare chart data
+  const getChartData = () => {
+    if (!data) return [];
+    const total = data.by_salesman.total;
+    return data.by_salesman.data.map((item, index) => ({
+      name: item.name,
+      value: item.amount,
+      percent: total > 0 ? item.amount / total : 0,
+      fill: COLORS[index % COLORS.length]
+    }));
+  };
+
   return (
     <div className="dashboard-card">
       <div className="card-header">
-        <h2>Sales by Location by Salesman</h2>
+        <h2>Sales by Location by Sales Man</h2>
         <div className="card-filters">
           <div className="filter-group">
             <label htmlFor="loc-year-select">Year:</label>
@@ -127,6 +183,36 @@ function SalesByLocationSalesman({ availableMonths }) {
               Year: <strong>{data.year}</strong> | Month: <strong>{data.month}</strong>
             </div>
             
+            {/* Pie Chart */}
+            <div className="chart-container" style={{ marginBottom: '24px' }}>
+              <h4 style={{ textAlign: 'center', margin: '0 0 8px 0', color: '#2d3748' }}>Sales Total</h4>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={getChartData()}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={true}
+                    label={renderCustomLabel}
+                    outerRadius={100}
+                    dataKey="value"
+                  >
+                    {getChartData().map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend 
+                    verticalAlign="bottom" 
+                    height={36}
+                    formatter={(value, entry) => (
+                      <span style={{ color: entry.color }}>{value}</span>
+                    )}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            
             <div className="sales-location-grid">
               {/* Sales by Salesman */}
               <div className="sales-table-container">
@@ -134,20 +220,32 @@ function SalesByLocationSalesman({ availableMonths }) {
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th>Name</th>
+                      <th>Row Labels</th>
                       <th style={{ textAlign: 'right' }}>Sum of Amount</th>
                     </tr>
                   </thead>
                   <tbody>
                     {data.by_salesman.data.map((item, index) => (
                       <tr key={index}>
-                        <td>{item.name}</td>
-                        <td className="number">{formatNumber(item.amount)}</td>
+                        <td>
+                          <span 
+                            style={{ 
+                              display: 'inline-block',
+                              width: '12px',
+                              height: '12px',
+                              backgroundColor: COLORS[index % COLORS.length],
+                              marginRight: '8px',
+                              borderRadius: '2px'
+                            }}
+                          />
+                          {item.name}
+                        </td>
+                        <td className="number">${formatNumber(item.amount)}</td>
                       </tr>
                     ))}
                     <tr className="total-row">
                       <td><strong>Grand Total</strong></td>
-                      <td className="number"><strong>{formatNumber(data.by_salesman.total)}</strong></td>
+                      <td className="number"><strong>${formatNumber(data.by_salesman.total)}</strong></td>
                     </tr>
                   </tbody>
                 </table>
@@ -159,7 +257,7 @@ function SalesByLocationSalesman({ availableMonths }) {
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th>Location</th>
+                      <th>Row Labels</th>
                       <th style={{ textAlign: 'right' }}>Sum of Amount</th>
                     </tr>
                   </thead>
@@ -167,12 +265,12 @@ function SalesByLocationSalesman({ availableMonths }) {
                     {data.by_location.data.map((item, index) => (
                       <tr key={index}>
                         <td>{item.name}</td>
-                        <td className="number">{formatNumber(item.amount)}</td>
+                        <td className="number">${formatNumber(item.amount)}</td>
                       </tr>
                     ))}
                     <tr className="total-row">
                       <td><strong>Grand Total</strong></td>
-                      <td className="number"><strong>{formatNumber(data.by_location.total)}</strong></td>
+                      <td className="number"><strong>${formatNumber(data.by_location.total)}</strong></td>
                     </tr>
                   </tbody>
                 </table>

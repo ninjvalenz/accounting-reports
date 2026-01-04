@@ -679,6 +679,18 @@
   font-weight: 600;
 }
 
+/* Chart Container */
+.chart-container {
+  background: #f7fafc;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.chart-container h4 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .app-header {
