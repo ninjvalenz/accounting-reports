@@ -661,6 +661,24 @@
   white-space: nowrap;
 }
 
+/* Sales by Location/Salesman Grid */
+.sales-location-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.sales-table-container {
+  overflow-x: auto;
+}
+
+.sales-table-container h4 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  color: #4a5568;
+  font-weight: 600;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .app-header {
@@ -711,6 +729,10 @@
   }
 
   .yoy-tables {
+    grid-template-columns: 1fr;
+  }
+
+  .sales-location-grid {
     grid-template-columns: 1fr;
   }
 }

@@ -149,6 +149,22 @@ def init_database():
         )
     ''')
     
+    # Sales by FPR (from SALES BY FPR sheet)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sales_by_fpr (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            upload_id INTEGER NOT NULL,
+            year_id INTEGER NOT NULL,
+            month_id INTEGER NOT NULL,
+            salesman TEXT NOT NULL,
+            location TEXT NOT NULL,
+            amount REAL DEFAULT 0,
+            FOREIGN KEY (upload_id) REFERENCES file_uploads(id),
+            FOREIGN KEY (year_id) REFERENCES years(id),
+            FOREIGN KEY (month_id) REFERENCES months(id)
+        )
+    ''')
+    
     # ========== PRE-POPULATE MONTHS ==========
     
     months_data = [

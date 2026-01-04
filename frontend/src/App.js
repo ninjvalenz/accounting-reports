@@ -8,6 +8,7 @@ import SalesCategoryWise from './components/SalesCategoryWise';
 import ProductionCategoryWise from './components/ProductionCategoryWise';
 import YoYGrowth from './components/YoYGrowth';
 import MoMGrowth from './components/MoMGrowth';
+import SalesByLocationSalesman from './components/SalesByLocationSalesman';
 import UploadHistory from './components/UploadHistory';
 
 const API_BASE_URL = 'http://localhost:5001/api';
@@ -132,6 +133,10 @@ function App() {
                 />
                 <MoMGrowth 
                   key={`mom-${refreshKey}`}
+                  availableMonths={availableMonths} 
+                />
+                <SalesByLocationSalesman 
+                  key={`loc-sales-${refreshKey}`}
                   availableMonths={availableMonths} 
                 />
               </div>

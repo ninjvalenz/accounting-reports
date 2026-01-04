@@ -350,6 +350,75 @@ def process_production_data(filepath, upload_id, months_years_set):
     print(f"   ✅ Saved {count} production data records")
     return count
 
+# Month name mapping for short format (Jan, Feb, etc.)
+SHORT_MONTH_MAP = {
+    'Jan': 'January',
+    'Feb': 'February',
+    'Mar': 'March',
+    'Apr': 'April',
+    'May': 'May',
+    'Jun': 'June',
+    'Jul': 'July',
+    'Aug': 'August',
+    'Sep': 'September',
+    'Oct': 'October',
+    'Nov': 'November',
+    'Dec': 'December'
+}
+
+def process_sales_by_fpr(filepath, upload_id, months_years_set):
+    """Process 'SALES BY FPR' sheet and save to database"""
+    print("\n👥 Processing Sales by FPR...")
+    
+    df = pd.read_excel(filepath, sheet_name='SALES BY FPR')
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    count = 0
+    for _, row in df.iterrows():
+        year = row.get('Year')
+        month_short = row.get('Month')  # Short format like 'Jan', 'Feb'
+        salesman = row.get('SalesMan')
+        location = row.get('Location')
+        amount = row.get('Amount', 0)
+        
+        # Skip invalid rows
+        if pd.isna(year) or pd.isna(month_short):
+            continue
+        
+        year = int(year)
+        
+        # Convert short month to full name
+        month_name = SHORT_MONTH_MAP.get(month_short)
+        if not month_name:
+            continue
+        
+        # Get or create year and month
+        year_id = get_or_create_year(cursor, year)
+        month_id = get_month_id(cursor, month_name)
+        
+        if not month_id:
+            continue
+        
+        # Clean up salesman and location
+        salesman = str(salesman).strip() if not pd.isna(salesman) else 'Unknown'
+        location = str(location).strip() if not pd.isna(location) else 'Unknown'
+        amount = 0 if pd.isna(amount) else float(amount)
+        
+        # Insert record
+        cursor.execute('''
+            INSERT INTO sales_by_fpr (upload_id, year_id, month_id, salesman, location, amount)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (upload_id, year_id, month_id, salesman, location, amount))
+        count += 1
+        
+        months_years_set.add(f"{month_name} {year}")
+    
+    conn.commit()
+    conn.close()
+    print(f"   ✅ Saved {count} sales by FPR records")
+    return count
+
 def process_excel_file(filepath):
     """Main function to process entire Excel file"""
     import os
@@ -379,6 +448,9 @@ def process_excel_file(filepath):
         
         process_production_data(filepath, upload_id, months_years_set)
         sheets_processed.append("Production Data")
+        
+        process_sales_by_fpr(filepath, upload_id, months_years_set)
+        sheets_processed.append("SALES BY FPR")
         
         # Sort months_years for consistent display
         months_years_list = sorted(list(months_years_set), 

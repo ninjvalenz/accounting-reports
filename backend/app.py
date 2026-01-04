@@ -152,6 +152,7 @@ def delete_upload(upload_id):
         cursor.execute('DELETE FROM budget_projection WHERE upload_id = ?', (upload_id,))
         cursor.execute('DELETE FROM working_days WHERE upload_id = ?', (upload_id,))
         cursor.execute('DELETE FROM production_data WHERE upload_id = ?', (upload_id,))
+        cursor.execute('DELETE FROM sales_by_fpr WHERE upload_id = ?', (upload_id,))
         
         # Delete the upload record
         cursor.execute('DELETE FROM file_uploads WHERE id = ?', (upload_id,))
@@ -899,6 +900,95 @@ def get_mom_growth():
         'upload_id': latest_upload_id,
         'categories': category_names,
         'months': months_list
+    })
+
+@app.route('/api/sales-by-location-salesman', methods=['GET'])
+def get_sales_by_location_salesman():
+    """Get Sales by Location and Sales by Salesman data from latest upload"""
+    year = request.args.get('year', 2025, type=int)
+    month_name = request.args.get('month', 'July')
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Get latest upload ID
+    latest_upload_id = get_latest_upload_id()
+    if not latest_upload_id:
+        conn.close()
+        return jsonify({'error': 'No data available. Please upload an Excel file first.'}), 404
+    
+    # Get year_id
+    cursor.execute('SELECT id FROM years WHERE year = ?', (year,))
+    year_row = cursor.fetchone()
+    if not year_row:
+        conn.close()
+        return jsonify({'error': f'Year {year} not found'}), 404
+    year_id = year_row['id']
+    
+    # Get month_id
+    cursor.execute('SELECT id FROM months WHERE name = ?', (month_name,))
+    month_row = cursor.fetchone()
+    if not month_row:
+        conn.close()
+        return jsonify({'error': f'Month {month_name} not found'}), 404
+    month_id = month_row['id']
+    
+    # Get Sales by Salesman
+    cursor.execute('''
+        SELECT 
+            salesman,
+            SUM(amount) as total_amount
+        FROM sales_by_fpr
+        WHERE year_id = ? AND month_id = ? AND upload_id = ?
+        GROUP BY salesman
+        ORDER BY total_amount DESC
+    ''', (year_id, month_id, latest_upload_id))
+    
+    by_salesman = []
+    salesman_total = 0
+    for row in cursor.fetchall():
+        amount = row['total_amount']
+        by_salesman.append({
+            'name': row['salesman'],
+            'amount': round(amount, 2)
+        })
+        salesman_total += amount
+    
+    # Get Sales by Location
+    cursor.execute('''
+        SELECT 
+            location,
+            SUM(amount) as total_amount
+        FROM sales_by_fpr
+        WHERE year_id = ? AND month_id = ? AND upload_id = ?
+        GROUP BY location
+        ORDER BY total_amount DESC
+    ''', (year_id, month_id, latest_upload_id))
+    
+    by_location = []
+    location_total = 0
+    for row in cursor.fetchall():
+        amount = row['total_amount']
+        by_location.append({
+            'name': row['location'],
+            'amount': round(amount, 2)
+        })
+        location_total += amount
+    
+    conn.close()
+    
+    return jsonify({
+        'year': year,
+        'month': month_name,
+        'upload_id': latest_upload_id,
+        'by_salesman': {
+            'data': by_salesman,
+            'total': round(salesman_total, 2)
+        },
+        'by_location': {
+            'data': by_location,
+            'total': round(location_total, 2)
+        }
     })
 
 @app.route('/api/health', methods=['GET'])
