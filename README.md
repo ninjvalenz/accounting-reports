@@ -1,105 +1,107 @@
-# Sales Performance Dashboard
+# Sales Performance Dashboard 2025
 
-A React-based POC that processes Excel files and displays a dashboard **exactly matching** the Dashboard-1 sheet from your Excel file.
-
-## Features
-
-- **Excel Upload**: Drag & drop or click to upload `.xlsx` files
-- **Exact Dashboard Replication**: Tables matching Dashboard-1 layout
-- **Sections Displayed**:
-  - Comparison - Sales (Budget vs Actual)
-  - Comparison - Production (Budgeted vs Actual)
-  - Sales Category Wise
-  - Production Category Wise
-  - YoY Growth (Quantity & Amount)
-  - MoM Growth
-  - Sales by Salesperson
-  - Sales by Location
-  - Sales by Type
-- **Month Filter**: Switch between months
-- **JSON Export**: Save calculated data for storage
-
-## Quick Start
-
-### 1. Install Dependencies
-```bash
-cd D:\Development\SalesReport
-npm install
-```
-
-### 2. Start the App
-```bash
-npm start
-```
-
-### 3. Open Browser
-Go to [http://localhost:3000](http://localhost:3000)
-
-### 4. Upload Your Excel File
-The app requires these sheets:
-- `Data`
-- `Product Master`
-- `Production Data`
-- `Customer Master`
-- `SALES BY FPR`
-- `Day (in Month)`
-- `Sales Projection 2025`
+A Python + React application that replicates the Excel dashboard functionality for sales performance analysis.
 
 ## Project Structure
 
 ```
 SalesReport/
-├── public/
-│   └── index.html
-├── sample_data/
-│   └── Sales_Perfomance_2025.xlsx
-├── src/
-│   ├── components/
-│   │   └── SalesDashboard.jsx      ← Main dashboard (all tables)
-│   ├── hooks/
-│   │   └── useExcelParser.js       ← Excel parsing hook
-│   ├── utils/
-│   │   ├── calculations.js         ← All dashboard calculations
-│   │   └── formatters.js           ← Number/currency formatting
-│   ├── App.jsx
-│   └── index.jsx
-├── package.json
+├── backend/
+│   ├── app.py              # Flask API server
+│   ├── requirements.txt    # Python dependencies
+│   └── uploads/            # Uploaded Excel files (created at runtime)
+├── frontend/
+│   ├── public/
+│   │   └── index.html
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── FileUpload.js
+│   │   │   └── ComparisonSales.js
+│   │   ├── App.js
+│   │   ├── App.css
+│   │   ├── index.js
+│   │   └── index.css
+│   └── package.json
 └── README.md
 ```
 
-## Why .jsx Extension?
+## Prerequisites
 
-`.jsx` is used for React component files because:
-1. **Semantic clarity** - Indicates the file contains JSX syntax
-2. **Better IDE support** - Some editors provide better syntax highlighting
-3. **Explicit intent** - Makes it clear this is a React component, not plain JS
+- Python 3.8+
+- Node.js 16+
+- npm or yarn
 
-Both `.js` and `.jsx` work with Create React App, but `.jsx` is more explicit.
+## Installation & Running
 
-## Storage Recommendations
+### Backend (Python/Flask)
 
-| Option | Use Case |
-|--------|----------|
-| **JSON Export** | Simple storage, backup, sharing |
-| **SQLite** | Local apps needing queries |
-| **PostgreSQL** | Multi-user, enterprise apps |
+1. Open a terminal and navigate to the backend folder:
+   ```bash
+   cd D:\Development\SalesReport\backend
+   ```
 
-The app includes a JSON export button - click "Export JSON" to save all calculated data.
+2. Create a virtual environment (optional but recommended):
+   ```bash
+   python -m venv venv
+   venv\Scripts\activate
+   ```
 
-## Tech Stack
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-- **React 18** - UI framework
-- **SheetJS (xlsx)** - Excel parsing
-- **Tailwind CSS** - Styling (via CDN)
-- **Lucide React** - Icons
+4. Run the Flask server:
+   ```bash
+   python app.py
+   ```
+   
+   The API will be running at http://localhost:5001
 
-## Scripts
+### Frontend (React)
 
-```bash
-npm start      # Development server
-npm run build  # Production build
-```
+1. Open another terminal and navigate to the frontend folder:
+   ```bash
+   cd D:\Development\SalesReport\frontend
+   ```
 
-## License
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-MIT
+3. Start the React development server:
+   ```bash
+   npm start
+   ```
+   
+   The app will open at http://localhost:3000
+
+## Usage
+
+1. Open http://localhost:3000 in your browser
+2. Upload your Sales Performance Excel file (must follow the template format)
+3. Use the month dropdown to view different periods
+4. The dashboard will display:
+   - Comparison - Sales (Budget vs Actual)
+   - (More sections to be added)
+
+## API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/upload` | POST | Upload Excel file |
+| `/api/months` | GET | Get available months |
+| `/api/comparison-sales` | GET | Get sales comparison data |
+| `/api/health` | GET | Health check |
+
+## Current Features
+
+- [x] File upload
+- [x] Comparison - Sales (Budget vs Actual)
+- [ ] Comparison - Production (Budget vs Actual)
+- [ ] Sales Category Wise
+- [ ] Production Category Wise
+- [ ] YoY Growth
+- [ ] MoM Growth
+- [ ] Sales by Location by Sales Man

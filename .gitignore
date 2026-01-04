@@ -1,3 +1,33 @@
 /node_modules
 /package-lock.json
 /sample_data
+
+# Backend
+/backend/__pycache__
+/backend/uploads
+/backend/venv
+/backend/*.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+site-packages/
+
+# Environment
+.env
+.venv
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
