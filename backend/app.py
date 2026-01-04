@@ -151,16 +151,19 @@ def delete_upload(upload_id):
         cursor.execute('DELETE FROM sales_data WHERE upload_id = ?', (upload_id,))
         cursor.execute('DELETE FROM budget_projection WHERE upload_id = ?', (upload_id,))
         cursor.execute('DELETE FROM working_days WHERE upload_id = ?', (upload_id,))
+        cursor.execute('DELETE FROM production_data WHERE upload_id = ?', (upload_id,))
         
         # Delete the upload record
         cursor.execute('DELETE FROM file_uploads WHERE id = ?', (upload_id,))
         
-        # Clean up orphaned products (not referenced by any sales_data or budget_projection)
+        # Clean up orphaned products (not referenced by any sales_data, budget_projection, or production_data)
         cursor.execute('''
             DELETE FROM products WHERE id NOT IN (
                 SELECT DISTINCT product_id FROM sales_data
                 UNION
                 SELECT DISTINCT product_id FROM budget_projection
+                UNION
+                SELECT DISTINCT product_id FROM production_data
             )
         ''')
         
@@ -179,6 +182,8 @@ def delete_upload(upload_id):
                 SELECT DISTINCT year_id FROM budget_projection
                 UNION
                 SELECT DISTINCT year_id FROM working_days
+                UNION
+                SELECT DISTINCT year_id FROM production_data
             )
         ''')
         
@@ -320,6 +325,115 @@ def get_comparison_sales():
                 'name': 'Collection Efficiency Ratio (% of Sales)',
                 'budget': None,
                 'actual': round(collection_efficiency, 2),
+                'variance': None
+            }
+        ]
+    })
+
+@app.route('/api/comparison-production', methods=['GET'])
+def get_comparison_production():
+    """Get Comparison - Production (Budget vs Actual) data from latest upload
+    
+    Budget comes from: SUM of budget_projection (Sales Projection 2025 sheet)
+    Actual comes from: SUM of production_data.qty_actual (Production Data sheet)
+    """
+    year = request.args.get('year', 2025, type=int)
+    month_name = request.args.get('month', 'July')
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Get latest upload ID
+    latest_upload_id = get_latest_upload_id()
+    if not latest_upload_id:
+        conn.close()
+        return jsonify({'error': 'No data available. Please upload an Excel file first.'}), 404
+    
+    # Get year_id
+    cursor.execute('SELECT id FROM years WHERE year = ?', (year,))
+    year_row = cursor.fetchone()
+    if not year_row:
+        conn.close()
+        return jsonify({'error': f'Year {year} not found'}), 404
+    year_id = year_row['id']
+    
+    # Get month_id
+    cursor.execute('SELECT id FROM months WHERE name = ?', (month_name,))
+    month_row = cursor.fetchone()
+    if not month_row:
+        conn.close()
+        return jsonify({'error': f'Month {month_name} not found'}), 404
+    month_id = month_row['id']
+    
+    # Get working days (from latest upload)
+    cursor.execute('''
+        SELECT days FROM working_days 
+        WHERE year_id = ? AND month_id = ? AND upload_id = ?
+    ''', (year_id, month_id, latest_upload_id))
+    days_row = cursor.fetchone()
+    working_days = days_row['days'] if days_row else 27
+    
+    # Get Budget Cases from budget_projection (Sales Projection 2025 sheet)
+    cursor.execute('''
+        SELECT COALESCE(SUM(quantity), 0) as total
+        FROM budget_projection
+        WHERE year_id = ? AND month_id = ? AND upload_id = ?
+    ''', (year_id, month_id, latest_upload_id))
+    budget_cases = cursor.fetchone()['total']
+    
+    # Get Actual Cases from production_data (Production Data sheet, Column K)
+    cursor.execute('''
+        SELECT COALESCE(SUM(qty_actual), 0) as total
+        FROM production_data
+        WHERE year_id = ? AND month_id = ? AND upload_id = ?
+    ''', (year_id, month_id, latest_upload_id))
+    actual_cases = cursor.fetchone()['total']
+    
+    # Get Actual Liters from production_data
+    cursor.execute('''
+        SELECT COALESCE(SUM(qty_actual_liters), 0) as total
+        FROM production_data
+        WHERE year_id = ? AND month_id = ? AND upload_id = ?
+    ''', (year_id, month_id, latest_upload_id))
+    actual_liters = cursor.fetchone()['total']
+    
+    conn.close()
+    
+    # Calculate derived values
+    variance_cases = actual_cases - budget_cases
+    daily_avg_budget = budget_cases / working_days if working_days > 0 else 0
+    daily_avg_actual = actual_cases / working_days if working_days > 0 else 0
+    daily_avg_variance = daily_avg_actual - daily_avg_budget
+    daily_liter_avg = actual_liters / working_days if working_days > 0 else 0
+    
+    return jsonify({
+        'year': year,
+        'month': month_name,
+        'days_in_month': working_days,
+        'upload_id': latest_upload_id,
+        'metrics': [
+            {
+                'name': 'Production Cases',
+                'budget': round(budget_cases, 2),
+                'actual': round(actual_cases, 2),
+                'variance': round(variance_cases, 2)
+            },
+            {
+                'name': 'Daily Case Avg',
+                'budget': round(daily_avg_budget, 2),
+                'actual': round(daily_avg_actual, 2),
+                'variance': round(daily_avg_variance, 2)
+            },
+            {
+                'name': 'Production in Liters',
+                'budget': None,
+                'actual': round(actual_liters, 2),
+                'variance': None
+            },
+            {
+                'name': 'Daily Liter Avg',
+                'budget': None,
+                'actual': round(daily_liter_avg, 2),
                 'variance': None
             }
         ]

@@ -3,6 +3,7 @@ import axios from 'axios';
 import './App.css';
 import FileUpload from './components/FileUpload';
 import ComparisonSales from './components/ComparisonSales';
+import ComparisonProduction from './components/ComparisonProduction';
 import UploadHistory from './components/UploadHistory';
 
 const API_BASE_URL = 'http://localhost:5001/api';
@@ -106,7 +107,11 @@ function App() {
             {isDataLoaded && (
               <div className="dashboard-grid">
                 <ComparisonSales 
-                  key={refreshKey}
+                  key={`sales-${refreshKey}`}
+                  availableMonths={availableMonths} 
+                />
+                <ComparisonProduction 
+                  key={`production-${refreshKey}`}
                   availableMonths={availableMonths} 
                 />
               </div>

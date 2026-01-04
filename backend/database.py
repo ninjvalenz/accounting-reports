@@ -129,6 +129,26 @@ def init_database():
         )
     ''')
     
+    # Production data (from Production Data sheet)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS production_data (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            upload_id INTEGER NOT NULL,
+            year_id INTEGER NOT NULL,
+            month_id INTEGER NOT NULL,
+            product_id INTEGER NOT NULL,
+            qty_budget REAL DEFAULT 0,
+            qty_budget_liters REAL DEFAULT 0,
+            qty_actual REAL DEFAULT 0,
+            qty_actual_liters REAL DEFAULT 0,
+            FOREIGN KEY (upload_id) REFERENCES file_uploads(id),
+            FOREIGN KEY (year_id) REFERENCES years(id),
+            FOREIGN KEY (month_id) REFERENCES months(id),
+            FOREIGN KEY (product_id) REFERENCES products(id),
+            UNIQUE(upload_id, year_id, month_id, product_id)
+        )
+    ''')
+    
     # ========== PRE-POPULATE MONTHS ==========
     
     months_data = [

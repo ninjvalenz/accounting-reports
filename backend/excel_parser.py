@@ -265,6 +265,91 @@ def process_sales_data(filepath, upload_id, months_years_set):
     print(f"   ✅ Saved {count} sales data records")
     return count
 
+def process_production_data(filepath, upload_id, months_years_set):
+    """Process 'Production Data' sheet and save to database"""
+    print("\n🏭 Processing Production Data...")
+    
+    df = pd.read_excel(filepath, sheet_name='Production Data')
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Group data by year, month, product to aggregate within the same file
+    aggregated_data = {}
+    
+    for _, row in df.iterrows():
+        month_str = row.get('Month')
+        month_name, year = parse_month(month_str)
+        
+        if not month_name:
+            continue
+        
+        # Get product info
+        product_name = row.get('Products')
+        category_name = row.get('Product Category')
+        sub_category = row.get('Product Category 2')
+        type_of_sales = row.get('Type of Sales')
+        
+        if pd.isna(product_name) or not product_name:
+            continue
+        
+        # Get or create entities
+        year_id = get_or_create_year(cursor, year)
+        month_id = get_month_id(cursor, month_name)
+        category_id = get_or_create_category(cursor, category_name)
+        product_id = get_or_create_product(cursor, product_name, category_id, sub_category, type_of_sales)
+        
+        if not month_id or not product_id:
+            continue
+        
+        # Get values (handle NaN)
+        qty_budget = row.get('Qty-Budgeted', 0)
+        qty_budget_liters = row.get('Qty Budgeted (In Ltrs)', 0)
+        qty_actual = row.get('Qty-Actual', 0)
+        qty_actual_liters = row.get('Qty in Liters', 0)
+        
+        # Replace NaN with 0
+        qty_budget = 0 if pd.isna(qty_budget) else float(qty_budget)
+        qty_budget_liters = 0 if pd.isna(qty_budget_liters) else float(qty_budget_liters)
+        qty_actual = 0 if pd.isna(qty_actual) else float(qty_actual)
+        qty_actual_liters = 0 if pd.isna(qty_actual_liters) else float(qty_actual_liters)
+        
+        # Create key for aggregation within same file
+        key = (year_id, month_id, product_id)
+        
+        if key not in aggregated_data:
+            aggregated_data[key] = {
+                'qty_budget': 0,
+                'qty_budget_liters': 0,
+                'qty_actual': 0,
+                'qty_actual_liters': 0
+            }
+        
+        # Aggregate values within the same file
+        aggregated_data[key]['qty_budget'] += qty_budget
+        aggregated_data[key]['qty_budget_liters'] += qty_budget_liters
+        aggregated_data[key]['qty_actual'] += qty_actual
+        aggregated_data[key]['qty_actual_liters'] += qty_actual_liters
+        
+        months_years_set.add(f"{month_name} {year}")
+    
+    # Insert aggregated data
+    count = 0
+    for (year_id, month_id, product_id), data in aggregated_data.items():
+        cursor.execute('''
+            INSERT INTO production_data 
+            (upload_id, year_id, month_id, product_id, qty_budget, qty_budget_liters, 
+             qty_actual, qty_actual_liters)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (upload_id, year_id, month_id, product_id, 
+              data['qty_budget'], data['qty_budget_liters'],
+              data['qty_actual'], data['qty_actual_liters']))
+        count += 1
+    
+    conn.commit()
+    conn.close()
+    print(f"   ✅ Saved {count} production data records")
+    return count
+
 def process_excel_file(filepath):
     """Main function to process entire Excel file"""
     import os
@@ -291,6 +376,9 @@ def process_excel_file(filepath):
         
         process_sales_data(filepath, upload_id, months_years_set)
         sheets_processed.append("Data")
+        
+        process_production_data(filepath, upload_id, months_years_set)
+        sheets_processed.append("Production Data")
         
         # Sort months_years for consistent display
         months_years_list = sorted(list(months_years_set), 
