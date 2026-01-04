@@ -1,4 +1,5 @@
 import pandas as pd
+import gc
 from database import (
     get_connection, 
     create_upload_record, 
@@ -34,6 +35,13 @@ MONTH_MAP = {
     "Dec'25": ("December", 2025),
 }
 
+# Short month name mapping
+SHORT_MONTH_MAP = {
+    'Jan': 'January', 'Feb': 'February', 'Mar': 'March', 'Apr': 'April',
+    'May': 'May', 'Jun': 'June', 'Jul': 'July', 'Aug': 'August',
+    'Sep': 'September', 'Oct': 'October', 'Nov': 'November', 'Dec': 'December'
+}
+
 def parse_month(month_str):
     """Convert Excel month format to (month_name, year)"""
     if month_str in MONTH_MAP:
@@ -41,7 +49,6 @@ def parse_month(month_str):
     return None, None
 
 def get_or_create_year(cursor, year):
-    """Get year ID or create if not exists"""
     cursor.execute('SELECT id FROM years WHERE year = ?', (year,))
     result = cursor.fetchone()
     if result:
@@ -50,13 +57,11 @@ def get_or_create_year(cursor, year):
     return cursor.lastrowid
 
 def get_month_id(cursor, month_name):
-    """Get month ID by name"""
     cursor.execute('SELECT id FROM months WHERE name = ?', (month_name,))
     result = cursor.fetchone()
     return result[0] if result else None
 
 def get_or_create_category(cursor, category_name):
-    """Get category ID or create if not exists"""
     if pd.isna(category_name) or not category_name:
         category_name = "Uncategorized"
     cursor.execute('SELECT id FROM product_categories WHERE name = ?', (category_name,))
@@ -67,480 +72,323 @@ def get_or_create_category(cursor, category_name):
     return cursor.lastrowid
 
 def get_or_create_product(cursor, product_name, category_id, sub_category=None, type_of_sales=None):
-    """Get product ID or create if not exists"""
     if pd.isna(product_name) or not product_name:
         return None
-    
-    cursor.execute('''
-        SELECT id FROM products WHERE name = ? AND category_id = ?
-    ''', (product_name, category_id))
+    cursor.execute('SELECT id FROM products WHERE name = ? AND category_id = ?', (product_name, category_id))
     result = cursor.fetchone()
     if result:
         return result[0]
-    
-    cursor.execute('''
-        INSERT INTO products (name, category_id, sub_category, type_of_sales)
-        VALUES (?, ?, ?, ?)
-    ''', (product_name, category_id, sub_category, type_of_sales))
+    cursor.execute('INSERT INTO products (name, category_id, sub_category, type_of_sales) VALUES (?, ?, ?, ?)',
+                   (product_name, category_id, sub_category, type_of_sales))
     return cursor.lastrowid
 
+def safe_float(val):
+    """Convert value to float, return 0 if NaN or invalid"""
+    if pd.isna(val):
+        return 0.0
+    try:
+        return float(val)
+    except:
+        return 0.0
+
 def process_working_days(filepath, upload_id, months_years_set):
-    """Process 'Day (in Month)' sheet and save to database"""
-    print("\n📅 Processing Working Days...")
-    
-    df = pd.read_excel(filepath, sheet_name='Day (in Month)')
+    print("📅 Processing Working Days...")
+    df = pd.read_excel(filepath, sheet_name='Day (in Month)', engine='openpyxl')
     conn = get_connection()
     cursor = conn.cursor()
-    
     count = 0
+    
     for _, row in df.iterrows():
-        month_str = row['Months']
-        days = row['Days in months']
-        
-        month_name, year = parse_month(month_str)
+        month_name, year = parse_month(row['Months'])
         if not month_name:
             continue
-        
         year_id = get_or_create_year(cursor, year)
         month_id = get_month_id(cursor, month_name)
-        
         if month_id:
-            cursor.execute('''
-                INSERT OR REPLACE INTO working_days (upload_id, year_id, month_id, days)
-                VALUES (?, ?, ?, ?)
-            ''', (upload_id, year_id, month_id, int(days)))
+            cursor.execute('INSERT OR REPLACE INTO working_days (upload_id, year_id, month_id, days) VALUES (?, ?, ?, ?)',
+                           (upload_id, year_id, month_id, int(row['Days in months'])))
             count += 1
             months_years_set.add(f"{month_name} {year}")
     
     conn.commit()
     conn.close()
-    print(f"   ✅ Saved {count} working days records")
+    del df
+    gc.collect()
+    print(f"   ✅ Saved {count} records")
     return count
 
 def process_sales_projection(filepath, upload_id, months_years_set):
-    """Process 'Sales Projection 2025' sheet and save to database"""
-    print("\n📊 Processing Sales Projection...")
-    
-    df = pd.read_excel(filepath, sheet_name='Sales Projection 2025', header=1)
+    print("📊 Processing Sales Projection...")
+    df = pd.read_excel(filepath, sheet_name='Sales Projection 2025', header=1, engine='openpyxl')
     conn = get_connection()
     cursor = conn.cursor()
     
-    # Find month columns (Jan'25, Feb'25, etc.)
     month_columns = [col for col in df.columns if "'25" in str(col) and "." not in str(col)]
-    
     count = 0
+    
     for _, row in df.iterrows():
-        # Get product info
         product_name = row.get('Products')
-        category_name = row.get('Product Category')
-        sub_category = row.get('Product Category 2')
-        type_of_sales = row.get('Type of Sales')
-        
         if pd.isna(product_name) or not product_name:
             continue
         
-        # Get or create category and product
-        category_id = get_or_create_category(cursor, category_name)
-        product_id = get_or_create_product(cursor, product_name, category_id, sub_category, type_of_sales)
-        
+        category_id = get_or_create_category(cursor, row.get('Product Category'))
+        product_id = get_or_create_product(cursor, product_name, category_id, 
+                                           row.get('Product Category 2'), row.get('Type of Sales'))
         if not product_id:
             continue
         
-        # Process each month column
         for month_col in month_columns:
             month_name, year = parse_month(month_col)
             if not month_name:
                 continue
-            
             year_id = get_or_create_year(cursor, year)
             month_id = get_month_id(cursor, month_name)
-            
-            quantity = row.get(month_col, 0)
-            if pd.isna(quantity):
-                quantity = 0
-            
             if month_id:
-                cursor.execute('''
-                    INSERT OR REPLACE INTO budget_projection (upload_id, year_id, month_id, product_id, quantity)
-                    VALUES (?, ?, ?, ?, ?)
-                ''', (upload_id, year_id, month_id, product_id, float(quantity)))
+                cursor.execute('INSERT OR REPLACE INTO budget_projection (upload_id, year_id, month_id, product_id, quantity) VALUES (?, ?, ?, ?, ?)',
+                               (upload_id, year_id, month_id, product_id, safe_float(row.get(month_col, 0))))
                 count += 1
                 months_years_set.add(f"{month_name} {year}")
     
     conn.commit()
     conn.close()
-    print(f"   ✅ Saved {count} budget projection records")
+    del df
+    gc.collect()
+    print(f"   ✅ Saved {count} records")
     return count
 
 def process_sales_data(filepath, upload_id, months_years_set):
-    """Process 'Data' sheet and save to database"""
-    print("\n💰 Processing Sales Data...")
-    
-    df = pd.read_excel(filepath, sheet_name='Data')
+    print("💰 Processing Sales Data...")
+    df = pd.read_excel(filepath, sheet_name='Data', engine='openpyxl')
     conn = get_connection()
     cursor = conn.cursor()
     
-    # Group data by year, month, product to aggregate within the same file
     aggregated_data = {}
     
     for _, row in df.iterrows():
-        month_str = row.get('Month')
-        month_name, year = parse_month(month_str)
-        
+        month_name, year = parse_month(row.get('Month'))
         if not month_name:
             continue
         
-        # Get product info
         product_name = row.get('Products')
-        category_name = row.get('Product Category')
-        sub_category = row.get('Product Category 2')
-        type_of_sales = row.get('Type of Sales')
-        
         if pd.isna(product_name) or not product_name:
             continue
         
-        # Get or create entities
         year_id = get_or_create_year(cursor, year)
         month_id = get_month_id(cursor, month_name)
-        category_id = get_or_create_category(cursor, category_name)
-        product_id = get_or_create_product(cursor, product_name, category_id, sub_category, type_of_sales)
+        category_id = get_or_create_category(cursor, row.get('Product Category'))
+        product_id = get_or_create_product(cursor, product_name, category_id,
+                                           row.get('Product Category 2'), row.get('Type of Sales'))
         
         if not month_id or not product_id:
             continue
         
-        # Get values (handle NaN)
-        qty_budget = row.get('Qty-Budget', 0)
-        amount_budget = row.get('Amount-Budget (US$)', 0)
-        qty_actual = row.get('Qty-Actual', 0)
-        amount_actual = row.get('Amount-Actual (US$)', 0)
-        qty_liters_budget = row.get('Qty in Liters (Budgeted)', 0)
-        qty_liters_actual = row.get('Qty in Liters', 0)
-        
-        # Replace NaN with 0
-        qty_budget = 0 if pd.isna(qty_budget) else float(qty_budget)
-        amount_budget = 0 if pd.isna(amount_budget) else float(amount_budget)
-        qty_actual = 0 if pd.isna(qty_actual) else float(qty_actual)
-        amount_actual = 0 if pd.isna(amount_actual) else float(amount_actual)
-        qty_liters_budget = 0 if pd.isna(qty_liters_budget) else float(qty_liters_budget)
-        qty_liters_actual = 0 if pd.isna(qty_liters_actual) else float(qty_liters_actual)
-        
-        # Create key for aggregation within same file
         key = (year_id, month_id, product_id)
-        
         if key not in aggregated_data:
-            aggregated_data[key] = {
-                'qty_budget': 0,
-                'amount_budget': 0,
-                'qty_actual': 0,
-                'amount_actual': 0,
-                'qty_liters_budget': 0,
-                'qty_liters_actual': 0
-            }
+            aggregated_data[key] = {'qb': 0, 'ab': 0, 'qa': 0, 'aa': 0, 'qlb': 0, 'qla': 0}
         
-        # Aggregate values within the same file
-        aggregated_data[key]['qty_budget'] += qty_budget
-        aggregated_data[key]['amount_budget'] += amount_budget
-        aggregated_data[key]['qty_actual'] += qty_actual
-        aggregated_data[key]['amount_actual'] += amount_actual
-        aggregated_data[key]['qty_liters_budget'] += qty_liters_budget
-        aggregated_data[key]['qty_liters_actual'] += qty_liters_actual
-        
+        aggregated_data[key]['qb'] += safe_float(row.get('Qty-Budget', 0))
+        aggregated_data[key]['ab'] += safe_float(row.get('Amount-Budget (US$)', 0))
+        aggregated_data[key]['qa'] += safe_float(row.get('Qty-Actual', 0))
+        aggregated_data[key]['aa'] += safe_float(row.get('Amount-Actual (US$)', 0))
+        aggregated_data[key]['qlb'] += safe_float(row.get('Qty in Liters (Budgeted)', 0))
+        aggregated_data[key]['qla'] += safe_float(row.get('Qty in Liters', 0))
         months_years_set.add(f"{month_name} {year}")
     
-    # Insert aggregated data
+    del df
+    gc.collect()
+    
     count = 0
-    for (year_id, month_id, product_id), data in aggregated_data.items():
-        cursor.execute('''
-            INSERT INTO sales_data 
-            (upload_id, year_id, month_id, product_id, qty_budget, amount_budget, qty_actual, 
-             amount_actual, qty_liters_budget, qty_liters_actual)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (upload_id, year_id, month_id, product_id, 
-              data['qty_budget'], data['amount_budget'], data['qty_actual'],
-              data['amount_actual'], data['qty_liters_budget'], data['qty_liters_actual']))
+    for (year_id, month_id, product_id), d in aggregated_data.items():
+        cursor.execute('''INSERT INTO sales_data (upload_id, year_id, month_id, product_id, qty_budget, amount_budget, 
+                          qty_actual, amount_actual, qty_liters_budget, qty_liters_actual) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                       (upload_id, year_id, month_id, product_id, d['qb'], d['ab'], d['qa'], d['aa'], d['qlb'], d['qla']))
         count += 1
     
     conn.commit()
     conn.close()
-    print(f"   ✅ Saved {count} sales data records")
+    del aggregated_data
+    gc.collect()
+    print(f"   ✅ Saved {count} records")
     return count
 
 def process_production_data(filepath, upload_id, months_years_set):
-    """Process 'Production Data' sheet and save to database"""
-    print("\n🏭 Processing Production Data...")
-    
-    df = pd.read_excel(filepath, sheet_name='Production Data')
+    print("🏭 Processing Production Data...")
+    df = pd.read_excel(filepath, sheet_name='Production Data', engine='openpyxl')
     conn = get_connection()
     cursor = conn.cursor()
     
-    # Group data by year, month, product to aggregate within the same file
     aggregated_data = {}
     
     for _, row in df.iterrows():
-        month_str = row.get('Month')
-        month_name, year = parse_month(month_str)
-        
+        month_name, year = parse_month(row.get('Month'))
         if not month_name:
             continue
         
-        # Get product info
         product_name = row.get('Products')
-        category_name = row.get('Product Category')
-        sub_category = row.get('Product Category 2')
-        type_of_sales = row.get('Type of Sales')
-        
         if pd.isna(product_name) or not product_name:
             continue
         
-        # Get or create entities
         year_id = get_or_create_year(cursor, year)
         month_id = get_month_id(cursor, month_name)
-        category_id = get_or_create_category(cursor, category_name)
-        product_id = get_or_create_product(cursor, product_name, category_id, sub_category, type_of_sales)
+        category_id = get_or_create_category(cursor, row.get('Product Category'))
+        product_id = get_or_create_product(cursor, product_name, category_id,
+                                           row.get('Product Category 2'), row.get('Type of Sales'))
         
         if not month_id or not product_id:
             continue
         
-        # Get values (handle NaN)
-        qty_budget = row.get('Qty-Budgeted', 0)
-        qty_budget_liters = row.get('Qty Budgeted (In Ltrs)', 0)
-        qty_actual = row.get('Qty-Actual', 0)
-        qty_actual_liters = row.get('Qty in Liters', 0)
-        
-        # Replace NaN with 0
-        qty_budget = 0 if pd.isna(qty_budget) else float(qty_budget)
-        qty_budget_liters = 0 if pd.isna(qty_budget_liters) else float(qty_budget_liters)
-        qty_actual = 0 if pd.isna(qty_actual) else float(qty_actual)
-        qty_actual_liters = 0 if pd.isna(qty_actual_liters) else float(qty_actual_liters)
-        
-        # Create key for aggregation within same file
         key = (year_id, month_id, product_id)
-        
         if key not in aggregated_data:
-            aggregated_data[key] = {
-                'qty_budget': 0,
-                'qty_budget_liters': 0,
-                'qty_actual': 0,
-                'qty_actual_liters': 0
-            }
+            aggregated_data[key] = {'qb': 0, 'qbl': 0, 'qa': 0, 'qal': 0}
         
-        # Aggregate values within the same file
-        aggregated_data[key]['qty_budget'] += qty_budget
-        aggregated_data[key]['qty_budget_liters'] += qty_budget_liters
-        aggregated_data[key]['qty_actual'] += qty_actual
-        aggregated_data[key]['qty_actual_liters'] += qty_actual_liters
-        
+        aggregated_data[key]['qb'] += safe_float(row.get('Qty-Budgeted', 0))
+        aggregated_data[key]['qbl'] += safe_float(row.get('Qty Budgeted (In Ltrs)', 0))
+        aggregated_data[key]['qa'] += safe_float(row.get('Qty-Actual', 0))
+        aggregated_data[key]['qal'] += safe_float(row.get('Qty in Liters', 0))
         months_years_set.add(f"{month_name} {year}")
     
-    # Insert aggregated data
+    del df
+    gc.collect()
+    
     count = 0
-    for (year_id, month_id, product_id), data in aggregated_data.items():
-        cursor.execute('''
-            INSERT INTO production_data 
-            (upload_id, year_id, month_id, product_id, qty_budget, qty_budget_liters, 
-             qty_actual, qty_actual_liters)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (upload_id, year_id, month_id, product_id, 
-              data['qty_budget'], data['qty_budget_liters'],
-              data['qty_actual'], data['qty_actual_liters']))
+    for (year_id, month_id, product_id), d in aggregated_data.items():
+        cursor.execute('''INSERT INTO production_data (upload_id, year_id, month_id, product_id, qty_budget, 
+                          qty_budget_liters, qty_actual, qty_actual_liters) VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                       (upload_id, year_id, month_id, product_id, d['qb'], d['qbl'], d['qa'], d['qal']))
         count += 1
     
     conn.commit()
     conn.close()
-    print(f"   ✅ Saved {count} production data records")
+    del aggregated_data
+    gc.collect()
+    print(f"   ✅ Saved {count} records")
     return count
 
-# Month name mapping for short format (Jan, Feb, etc.)
-SHORT_MONTH_MAP = {
-    'Jan': 'January',
-    'Feb': 'February',
-    'Mar': 'March',
-    'Apr': 'April',
-    'May': 'May',
-    'Jun': 'June',
-    'Jul': 'July',
-    'Aug': 'August',
-    'Sep': 'September',
-    'Oct': 'October',
-    'Nov': 'November',
-    'Dec': 'December'
-}
-
 def process_sales_by_fpr(filepath, upload_id, months_years_set):
-    """Process 'SALES BY FPR' sheet and save to database"""
-    print("\n👥 Processing Sales by FPR...")
-    
-    df = pd.read_excel(filepath, sheet_name='SALES BY FPR')
+    print("👥 Processing Sales by FPR...")
+    df = pd.read_excel(filepath, sheet_name='SALES BY FPR', engine='openpyxl')
     conn = get_connection()
     cursor = conn.cursor()
-    
     count = 0
+    
     for _, row in df.iterrows():
         year = row.get('Year')
-        month_short = row.get('Month')  # Short format like 'Jan', 'Feb'
-        salesman = row.get('SalesMan')
-        location = row.get('Location')
-        type_of_sales = row.get('Type of sales')
-        amount = row.get('Amount', 0)
-        
-        # Skip invalid rows
+        month_short = row.get('Month')
         if pd.isna(year) or pd.isna(month_short):
             continue
         
-        year = int(year)
-        
-        # Convert short month to full name
         month_name = SHORT_MONTH_MAP.get(month_short)
         if not month_name:
             continue
         
-        # Get or create year and month
-        year_id = get_or_create_year(cursor, year)
+        year_id = get_or_create_year(cursor, int(year))
         month_id = get_month_id(cursor, month_name)
-        
         if not month_id:
             continue
         
-        # Clean up salesman, location, and type_of_sales
-        salesman = str(salesman).strip() if not pd.isna(salesman) else 'Unknown'
-        location = str(location).strip() if not pd.isna(location) else 'Unknown'
-        type_of_sales = str(type_of_sales).strip() if not pd.isna(type_of_sales) else 'Unknown'
-        amount = 0 if pd.isna(amount) else float(amount)
+        salesman = str(row.get('SalesMan', 'Unknown')).strip() if not pd.isna(row.get('SalesMan')) else 'Unknown'
+        location = str(row.get('Location', 'Unknown')).strip() if not pd.isna(row.get('Location')) else 'Unknown'
+        type_of_sales = str(row.get('Type of sales', 'Unknown')).strip() if not pd.isna(row.get('Type of sales')) else 'Unknown'
         
-        # Insert record
-        cursor.execute('''
-            INSERT INTO sales_by_fpr (upload_id, year_id, month_id, salesman, location, type_of_sales, amount)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (upload_id, year_id, month_id, salesman, location, type_of_sales, amount))
+        cursor.execute('INSERT INTO sales_by_fpr (upload_id, year_id, month_id, salesman, location, type_of_sales, amount) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                       (upload_id, year_id, month_id, salesman, location, type_of_sales, safe_float(row.get('Amount', 0))))
         count += 1
-        
-        months_years_set.add(f"{month_name} {year}")
+        months_years_set.add(f"{month_name} {int(year)}")
     
     conn.commit()
     conn.close()
-    print(f"   ✅ Saved {count} sales by FPR records")
+    del df
+    gc.collect()
+    print(f"   ✅ Saved {count} records")
     return count
 
 def process_cost_data(filepath, upload_id, months_years_set):
-    """Process cost data (Fuel & LEC) from Dashboard-1 sheet (rows 110-116)"""
-    print("\n💰 Processing Cost Data (Fuel & LEC)...")
-    
+    print("💰 Processing Cost Data...")
     from openpyxl import load_workbook
     
-    wb = load_workbook(filepath, data_only=True)
+    wb = load_workbook(filepath, data_only=True, read_only=True)
     ws = wb['Dashboard-1']
-    
     conn = get_connection()
     cursor = conn.cursor()
-    
     count = 0
-    # Read rows 110-116 (cost data rows)
-    for row in range(110, 120):  # Check a few extra rows in case
-        month_cell = ws.cell(row=row, column=1).value  # Column A - Month
-        fuel = ws.cell(row=row, column=2).value  # Column B - Fuel
-        lec = ws.cell(row=row, column=3).value  # Column C - LEC
-        
+    
+    for row in ws.iter_rows(min_row=110, max_row=120, max_col=3):
+        month_cell = row[0].value
         if not month_cell or not isinstance(month_cell, str):
             continue
-            
-        # Parse month like "Jan'25"
+        
         month_name, year = parse_month(month_cell)
         if not month_name:
             continue
         
-        # Get or create year and month
         year_id = get_or_create_year(cursor, year)
         month_id = get_month_id(cursor, month_name)
-        
         if not month_id:
             continue
         
-        fuel = 0 if not fuel or pd.isna(fuel) else float(fuel)
-        lec = 0 if not lec or pd.isna(lec) else float(lec)
+        fuel = safe_float(row[1].value)
+        lec = safe_float(row[2].value)
         
-        # Insert or update record
-        cursor.execute('''
-            INSERT OR REPLACE INTO cost_data (upload_id, year_id, month_id, fuel, lec)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (upload_id, year_id, month_id, fuel, lec))
+        cursor.execute('INSERT OR REPLACE INTO cost_data (upload_id, year_id, month_id, fuel, lec) VALUES (?, ?, ?, ?, ?)',
+                       (upload_id, year_id, month_id, fuel, lec))
         count += 1
-        
         months_years_set.add(f"{month_name} {year}")
     
     conn.commit()
     conn.close()
-    print(f"   ✅ Saved {count} cost data records")
+    wb.close()
+    gc.collect()
+    print(f"   ✅ Saved {count} records")
     return count
 
 def process_excel_file(filepath):
     """Main function to process entire Excel file"""
     import os
     filename = os.path.basename(filepath)
-    
     print(f"\n{'='*50}")
-    print(f"📁 Processing Excel File: {filename}")
+    print(f"📁 Processing: {filename}")
     print(f"{'='*50}")
     
-    # Create upload record
     upload_id = create_upload_record(filename)
-    
-    # Track processed data
     sheets_processed = []
     months_years_set = set()
     
     try:
-        # Process all required sheets
         process_working_days(filepath, upload_id, months_years_set)
         sheets_processed.append("Day (in Month)")
+        gc.collect()
         
         process_sales_projection(filepath, upload_id, months_years_set)
         sheets_processed.append("Sales Projection 2025")
+        gc.collect()
         
         process_sales_data(filepath, upload_id, months_years_set)
         sheets_processed.append("Data")
+        gc.collect()
         
         process_production_data(filepath, upload_id, months_years_set)
         sheets_processed.append("Production Data")
+        gc.collect()
         
         process_sales_by_fpr(filepath, upload_id, months_years_set)
         sheets_processed.append("SALES BY FPR")
+        gc.collect()
         
         process_cost_data(filepath, upload_id, months_years_set)
-        sheets_processed.append("Dashboard-1 (Cost Data)")
+        sheets_processed.append("Dashboard-1")
+        gc.collect()
         
-        # Sort months_years for consistent display
         months_years_list = sorted(list(months_years_set), 
                                    key=lambda x: (int(x.split()[-1]), 
-                                                  ["January", "February", "March", "April", 
-                                                   "May", "June", "July", "August", 
-                                                   "September", "October", "November", "December"].index(x.split()[0])))
+                                                  ["January", "February", "March", "April", "May", "June", 
+                                                   "July", "August", "September", "October", "November", "December"].index(x.split()[0])))
         
-        # Update upload record as successful
         update_upload_success(upload_id, sheets_processed, months_years_list)
+        print(f"\n✅ Complete! Sheets: {len(sheets_processed)}, Periods: {len(months_years_list)}")
         
-        print(f"\n{'='*50}")
-        print("✅ All data processed and saved to database!")
-        print(f"📋 Sheets processed: {', '.join(sheets_processed)}")
-        print(f"📅 Months/Years: {len(months_years_list)} periods")
-        print(f"{'='*50}\n")
-        
-        return {
-            'success': True,
-            'upload_id': upload_id,
-            'sheets_processed': sheets_processed,
-            'months_years_processed': months_years_list
-        }
+        return {'success': True, 'upload_id': upload_id, 'sheets_processed': sheets_processed, 'months_years_processed': months_years_list}
         
     except Exception as e:
-        # Update upload record with error
         update_upload_error(upload_id, str(e))
-        print(f"\n❌ Error processing file: {str(e)}")
+        print(f"\n❌ Error: {str(e)}")
         raise e
-
-if __name__ == '__main__':
-    # Test with sample file
-    import sys
-    if len(sys.argv) > 1:
-        process_excel_file(sys.argv[1])
-    else:
-        print("Usage: python excel_parser.py <path_to_excel_file>")
