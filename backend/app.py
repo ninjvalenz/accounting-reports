@@ -439,6 +439,115 @@ def get_comparison_production():
         ]
     })
 
+@app.route('/api/sales-category-wise', methods=['GET'])
+def get_sales_category_wise():
+    """Get Sales Category Wise data from latest upload
+    
+    Groups sales data by Product Category for selected month(s).
+    Supports multiple months and years via comma-separated values.
+    """
+    years_param = request.args.get('years', '2025')  # comma-separated years
+    months_param = request.args.get('months', 'July')  # comma-separated months
+    
+    # Parse comma-separated values
+    years = [int(y.strip()) for y in years_param.split(',') if y.strip()]
+    months = [m.strip() for m in months_param.split(',') if m.strip()]
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Get latest upload ID
+    latest_upload_id = get_latest_upload_id()
+    if not latest_upload_id:
+        conn.close()
+        return jsonify({'error': 'No data available. Please upload an Excel file first.'}), 404
+    
+    # Get year_ids
+    year_ids = []
+    for year in years:
+        cursor.execute('SELECT id FROM years WHERE year = ?', (year,))
+        year_row = cursor.fetchone()
+        if year_row:
+            year_ids.append(year_row['id'])
+    
+    if not year_ids:
+        conn.close()
+        return jsonify({'error': 'No valid years found'}), 404
+    
+    # Get month_ids
+    month_ids = []
+    for month_name in months:
+        cursor.execute('SELECT id FROM months WHERE name = ?', (month_name,))
+        month_row = cursor.fetchone()
+        if month_row:
+            month_ids.append(month_row['id'])
+    
+    if not month_ids:
+        conn.close()
+        return jsonify({'error': 'No valid months found'}), 404
+    
+    # Build dynamic query with placeholders
+    year_placeholders = ','.join(['?' for _ in year_ids])
+    month_placeholders = ','.join(['?' for _ in month_ids])
+    
+    query = f'''
+        SELECT 
+            pc.name as category,
+            COALESCE(SUM(sd.qty_actual), 0) as qty_cases,
+            COALESCE(SUM(sd.qty_liters_actual), 0) as qty_liters,
+            COALESCE(SUM(sd.amount_actual), 0) as amount_usd
+        FROM sales_data sd
+        JOIN products p ON sd.product_id = p.id
+        JOIN product_categories pc ON p.category_id = pc.id
+        WHERE sd.year_id IN ({year_placeholders}) 
+          AND sd.month_id IN ({month_placeholders}) 
+          AND sd.upload_id = ?
+        GROUP BY pc.id, pc.name
+        ORDER BY qty_cases DESC
+    '''
+    
+    params = year_ids + month_ids + [latest_upload_id]
+    cursor.execute(query, params)
+    
+    categories = []
+    total_cases = 0
+    total_liters = 0
+    total_amount = 0
+    
+    for row in cursor.fetchall():
+        qty_cases = row['qty_cases']
+        qty_liters = row['qty_liters']
+        amount_usd = row['amount_usd']
+        
+        # Skip categories with no data
+        if qty_cases == 0 and qty_liters == 0 and amount_usd == 0:
+            continue
+            
+        categories.append({
+            'category': row['category'],
+            'qty_cases': round(qty_cases, 2),
+            'qty_liters': round(qty_liters, 2),
+            'amount_usd': round(amount_usd, 2)
+        })
+        
+        total_cases += qty_cases
+        total_liters += qty_liters
+        total_amount += amount_usd
+    
+    conn.close()
+    
+    return jsonify({
+        'years': years,
+        'months': months,
+        'upload_id': latest_upload_id,
+        'categories': categories,
+        'totals': {
+            'qty_cases': round(total_cases, 2),
+            'qty_liters': round(total_liters, 2),
+            'amount_usd': round(total_amount, 2)
+        }
+    })
+
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""

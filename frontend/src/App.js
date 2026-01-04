@@ -4,6 +4,7 @@ import './App.css';
 import FileUpload from './components/FileUpload';
 import ComparisonSales from './components/ComparisonSales';
 import ComparisonProduction from './components/ComparisonProduction';
+import SalesCategoryWise from './components/SalesCategoryWise';
 import UploadHistory from './components/UploadHistory';
 
 const API_BASE_URL = 'http://localhost:5001/api';
@@ -112,6 +113,10 @@ function App() {
                 />
                 <ComparisonProduction 
                   key={`production-${refreshKey}`}
+                  availableMonths={availableMonths} 
+                />
+                <SalesCategoryWise 
+                  key={`sales-cat-${refreshKey}`}
                   availableMonths={availableMonths} 
                 />
               </div>
