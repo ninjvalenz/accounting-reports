@@ -248,37 +248,23 @@ def get_comparison_sales():
     days_row = cursor.fetchone()
     working_days = days_row['days'] if days_row else 27
     
-    # Get Budget Cases (from budget_projection, latest upload)
+    # Get all sales metrics from sales_data (Data sheet) in one query
+    # Budget = Qty-Budget & Amount-Budget columns
+    # Actual = Qty-Actual & Amount-Actual columns
     cursor.execute('''
-        SELECT COALESCE(SUM(quantity), 0) as total
-        FROM budget_projection
-        WHERE year_id = ? AND month_id = ? AND upload_id = ?
-    ''', (year_id, month_id, latest_upload_id))
-    budget_cases = cursor.fetchone()['total']
-    
-    # Get Actual Cases (from sales_data, latest upload)
-    cursor.execute('''
-        SELECT COALESCE(SUM(qty_actual), 0) as total
+        SELECT 
+            COALESCE(SUM(qty_budget), 0) as qty_budget,
+            COALESCE(SUM(qty_actual), 0) as qty_actual,
+            COALESCE(SUM(amount_budget), 0) as amount_budget,
+            COALESCE(SUM(amount_actual), 0) as amount_actual
         FROM sales_data
         WHERE year_id = ? AND month_id = ? AND upload_id = ?
     ''', (year_id, month_id, latest_upload_id))
-    actual_cases = cursor.fetchone()['total']
-    
-    # Get Budget Amount (from sales_data, latest upload)
-    cursor.execute('''
-        SELECT COALESCE(SUM(amount_budget), 0) as total
-        FROM sales_data
-        WHERE year_id = ? AND month_id = ? AND upload_id = ?
-    ''', (year_id, month_id, latest_upload_id))
-    budget_amount = cursor.fetchone()['total']
-    
-    # Get Actual Amount (from sales_data, latest upload)
-    cursor.execute('''
-        SELECT COALESCE(SUM(amount_actual), 0) as total
-        FROM sales_data
-        WHERE year_id = ? AND month_id = ? AND upload_id = ?
-    ''', (year_id, month_id, latest_upload_id))
-    actual_amount = cursor.fetchone()['total']
+    sales_row = cursor.fetchone()
+    budget_cases = sales_row['qty_budget']
+    actual_cases = sales_row['qty_actual']
+    budget_amount = sales_row['amount_budget']
+    actual_amount = sales_row['amount_actual']
     
     conn.close()
     
@@ -336,8 +322,8 @@ def get_comparison_sales():
 def get_comparison_production():
     """Get Comparison - Production (Budget vs Actual) data from latest upload
     
-    Budget comes from: SUM of budget_projection (Sales Projection 2025 sheet)
-    Actual comes from: SUM of production_data.qty_actual (Production Data sheet)
+    Budget comes from: budget_projection (Sales Projection 2025 sheet - via HLOOKUP in Excel)
+    Actual comes from: production_data.qty_actual (Production Data sheet)
     """
     year = request.args.get('year', 2025, type=int)
     month_name = request.args.get('month', 'July')
@@ -383,21 +369,17 @@ def get_comparison_production():
     ''', (year_id, month_id, latest_upload_id))
     budget_cases = cursor.fetchone()['total']
     
-    # Get Actual Cases from production_data (Production Data sheet, Column K)
+    # Get Actual Cases and Liters from production_data (Production Data sheet)
     cursor.execute('''
-        SELECT COALESCE(SUM(qty_actual), 0) as total
+        SELECT 
+            COALESCE(SUM(qty_actual), 0) as qty_actual,
+            COALESCE(SUM(qty_actual_liters), 0) as qty_actual_liters
         FROM production_data
         WHERE year_id = ? AND month_id = ? AND upload_id = ?
     ''', (year_id, month_id, latest_upload_id))
-    actual_cases = cursor.fetchone()['total']
-    
-    # Get Actual Liters from production_data
-    cursor.execute('''
-        SELECT COALESCE(SUM(qty_actual_liters), 0) as total
-        FROM production_data
-        WHERE year_id = ? AND month_id = ? AND upload_id = ?
-    ''', (year_id, month_id, latest_upload_id))
-    actual_liters = cursor.fetchone()['total']
+    prod_row = cursor.fetchone()
+    actual_cases = prod_row['qty_actual']
+    actual_liters = prod_row['qty_actual_liters']
     
     conn.close()
     

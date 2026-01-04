@@ -224,7 +224,7 @@ def read_all_sheets(filepath):
     # Define sheets and their header rows
     sheet_configs = {
         'Day (in Month)': {'header_row': 1},
-        'Sales Projection 2025': {'header_row': 2},
+        'Sales Projection 2025': {'header_row': 2, 'use_index': True},  # Has duplicate headers!
         'Data': {'header_row': 1},
         'Production Data': {'header_row': 1},
         'SALES BY FPR': {'header_row': 1},
@@ -234,6 +234,7 @@ def read_all_sheets(filepath):
         if sheet_name in wb.sheetnames:
             ws = wb[sheet_name]
             header_row = config['header_row']
+            use_index = config.get('use_index', False)
             
             # Get headers
             headers = []
@@ -244,10 +245,23 @@ def read_all_sheets(filepath):
             # Read all rows into memory
             rows = []
             for row in ws.iter_rows(min_row=header_row + 1):
-                row_data = {}
-                for i, cell in enumerate(row):
-                    if i < len(headers) and headers[i]:
-                        row_data[headers[i]] = cell.value
+                if use_index:
+                    # Store by index to handle duplicate headers
+                    row_data = {}
+                    seen_headers = set()
+                    for i, cell in enumerate(row):
+                        if i < len(headers) and headers[i]:
+                            header = headers[i]
+                            # Only use FIRST occurrence of each header
+                            if header not in seen_headers:
+                                row_data[header] = cell.value
+                                seen_headers.add(header)
+                else:
+                    # Normal: store by header name (last value wins for duplicates)
+                    row_data = {}
+                    for i, cell in enumerate(row):
+                        if i < len(headers) and headers[i]:
+                            row_data[headers[i]] = cell.value
                 rows.append(row_data)
             
             sheets_data[sheet_name] = {'headers': headers, 'rows': rows}
@@ -299,8 +313,18 @@ def process_sales_projection(rows, headers, upload_id):
     cursor = conn.cursor()
     months_set = set()
     
-    # Find month columns
-    month_columns = [h for h in headers if h and "'25" in str(h) and "." not in str(h)]
+    # Find month columns - ONLY use first occurrence of each month (columns 4-15 are Qty)
+    # The sheet has duplicate month headers for different data sections
+    month_columns = []
+    seen_months = set()
+    for i, h in enumerate(headers):
+        if h and "'25" in str(h) and "." not in str(h):
+            # Only take first occurrence of each month
+            if h not in seen_months:
+                month_columns.append(h)
+                seen_months.add(h)
+    
+    print(f"   📅 Using {len(month_columns)} unique month columns")
     
     batch = []
     for row in rows:
