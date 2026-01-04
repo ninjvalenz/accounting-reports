@@ -158,6 +158,7 @@ def init_database():
             month_id INTEGER NOT NULL,
             salesman TEXT NOT NULL,
             location TEXT NOT NULL,
+            type_of_sales TEXT,
             amount REAL DEFAULT 0,
             FOREIGN KEY (upload_id) REFERENCES file_uploads(id),
             FOREIGN KEY (year_id) REFERENCES years(id),

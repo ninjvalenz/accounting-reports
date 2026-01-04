@@ -380,6 +380,7 @@ def process_sales_by_fpr(filepath, upload_id, months_years_set):
         month_short = row.get('Month')  # Short format like 'Jan', 'Feb'
         salesman = row.get('SalesMan')
         location = row.get('Location')
+        type_of_sales = row.get('Type of sales')
         amount = row.get('Amount', 0)
         
         # Skip invalid rows
@@ -400,16 +401,17 @@ def process_sales_by_fpr(filepath, upload_id, months_years_set):
         if not month_id:
             continue
         
-        # Clean up salesman and location
+        # Clean up salesman, location, and type_of_sales
         salesman = str(salesman).strip() if not pd.isna(salesman) else 'Unknown'
         location = str(location).strip() if not pd.isna(location) else 'Unknown'
+        type_of_sales = str(type_of_sales).strip() if not pd.isna(type_of_sales) else 'Unknown'
         amount = 0 if pd.isna(amount) else float(amount)
         
         # Insert record
         cursor.execute('''
-            INSERT INTO sales_by_fpr (upload_id, year_id, month_id, salesman, location, amount)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (upload_id, year_id, month_id, salesman, location, amount))
+            INSERT INTO sales_by_fpr (upload_id, year_id, month_id, salesman, location, type_of_sales, amount)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (upload_id, year_id, month_id, salesman, location, type_of_sales, amount))
         count += 1
         
         months_years_set.add(f"{month_name} {year}")

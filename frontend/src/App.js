@@ -9,6 +9,7 @@ import ProductionCategoryWise from './components/ProductionCategoryWise';
 import YoYGrowth from './components/YoYGrowth';
 import MoMGrowth from './components/MoMGrowth';
 import SalesByLocationSalesman from './components/SalesByLocationSalesman';
+import SalesByType from './components/SalesByType';
 import UploadHistory from './components/UploadHistory';
 
 const API_BASE_URL = 'http://localhost:5001/api';
@@ -137,6 +138,10 @@ function App() {
                 />
                 <SalesByLocationSalesman 
                   key={`loc-sales-${refreshKey}`}
+                  availableMonths={availableMonths} 
+                />
+                <SalesByType 
+                  key={`sales-type-${refreshKey}`}
                   availableMonths={availableMonths} 
                 />
               </div>

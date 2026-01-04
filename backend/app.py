@@ -991,6 +991,72 @@ def get_sales_by_location_salesman():
         }
     })
 
+@app.route('/api/sales-by-type', methods=['GET'])
+def get_sales_by_type():
+    """Get Sales by Type of Sales data from latest upload
+    
+    Data comes from SALES BY FPR sheet - type_of_sales column
+    (Distributor, HoReCa, Retail, Supermarket, Whole Sales)
+    """
+    year = request.args.get('year', 2025, type=int)
+    month_name = request.args.get('month', 'July')
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Get latest upload ID
+    latest_upload_id = get_latest_upload_id()
+    if not latest_upload_id:
+        conn.close()
+        return jsonify({'error': 'No data available. Please upload an Excel file first.'}), 404
+    
+    # Get year_id
+    cursor.execute('SELECT id FROM years WHERE year = ?', (year,))
+    year_row = cursor.fetchone()
+    if not year_row:
+        conn.close()
+        return jsonify({'error': f'Year {year} not found'}), 404
+    year_id = year_row['id']
+    
+    # Get month_id
+    cursor.execute('SELECT id FROM months WHERE name = ?', (month_name,))
+    month_row = cursor.fetchone()
+    if not month_row:
+        conn.close()
+        return jsonify({'error': f'Month {month_name} not found'}), 404
+    month_id = month_row['id']
+    
+    # Get Sales by Type from sales_by_fpr table
+    cursor.execute('''
+        SELECT 
+            type_of_sales,
+            SUM(amount) as total_amount
+        FROM sales_by_fpr
+        WHERE year_id = ? AND month_id = ? AND upload_id = ?
+        GROUP BY type_of_sales
+        ORDER BY total_amount DESC
+    ''', (year_id, month_id, latest_upload_id))
+    
+    by_type = []
+    total = 0
+    for row in cursor.fetchall():
+        amount = row['total_amount']
+        by_type.append({
+            'name': row['type_of_sales'],
+            'amount': round(amount, 2)
+        })
+        total += amount
+    
+    conn.close()
+    
+    return jsonify({
+        'year': year,
+        'month': month_name,
+        'upload_id': latest_upload_id,
+        'data': by_type,
+        'total': round(total, 2)
+    })
+
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
