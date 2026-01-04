@@ -12,9 +12,6 @@ __pycache__/
 .env
 .env.local
 
-# Database (for production, use fresh DB)
-*.db
-
 # Uploads
 uploads/*
 !uploads/.gitkeep
