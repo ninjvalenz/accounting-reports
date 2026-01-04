@@ -1,11 +1,11 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { Upload, RefreshCw } from 'lucide-react';
+import { Upload, RefreshCw, Settings } from 'lucide-react';
 import FileUpload from './FileUpload';
 import useExcelParser from '../hooks/useExcelParser';
 import { calculateDashboard } from '../utils/calculations';
 import { formatNumber, formatCurrency, formatPercent } from '../utils/formatters';
 
-const ExcelStyleDashboard = () => {
+const ExcelStyleDashboard = ({ onNavigateToMaintenance }) => {
   const { sheets, loading, error, parseFile, reset, REQUIRED_SHEETS } = useExcelParser();
   const [selectedMonth, setSelectedMonth] = useState("Jul'25");
   const [selectedYear, setSelectedYear] = useState(2025);
@@ -59,6 +59,7 @@ const ExcelStyleDashboard = () => {
         loading={loading}
         error={error}
         requiredSheets={REQUIRED_SHEETS}
+        onNavigateToMaintenance={onNavigateToMaintenance}
       />
     );
   }
@@ -110,6 +111,16 @@ const ExcelStyleDashboard = () => {
             <RefreshCw size={16} />
             <span>Reset</span>
           </button>
+          {onNavigateToMaintenance && (
+            <button
+              onClick={onNavigateToMaintenance}
+              className="flex items-center gap-2 px-3 py-1.5 bg-purple-500 text-white rounded text-sm hover:bg-purple-600"
+              title="Manage Product Categories"
+            >
+              <Settings size={16} />
+              <span>Maintenance</span>
+            </button>
+          )}
         </div>
       </div>
 

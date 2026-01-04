@@ -1270,6 +1270,446 @@ def get_cost_analysis():
         'data': months_data
     })
 
+# ========== MAINTENANCE ENDPOINTS ==========
+
+@app.route('/api/product-categories', methods=['GET'])
+def get_product_categories():
+    """Get all product categories with their product count"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT 
+            pc.id,
+            pc.name,
+            COUNT(p.id) as product_count
+        FROM product_categories pc
+        LEFT JOIN products p ON pc.id = p.category_id
+        GROUP BY pc.id, pc.name
+        ORDER BY pc.name
+    ''')
+    
+    categories = []
+    for row in cursor.fetchall():
+        categories.append({
+            'id': row['id'],
+            'name': row['name'],
+            'product_count': row['product_count']
+        })
+    
+    conn.close()
+    return jsonify({'categories': categories})
+
+@app.route('/api/product-categories', methods=['POST'])
+def create_product_category():
+    """Create a new product category"""
+    data = request.get_json()
+    
+    if not data or not data.get('name'):
+        return jsonify({'error': 'Category name is required'}), 400
+    
+    name = data['name'].strip()
+    
+    if not name:
+        return jsonify({'error': 'Category name cannot be empty'}), 400
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Check if category already exists
+        cursor.execute('SELECT id FROM product_categories WHERE LOWER(name) = LOWER(?)', (name,))
+        if cursor.fetchone():
+            conn.close()
+            return jsonify({'error': f'Category "{name}" already exists'}), 409
+        
+        cursor.execute('INSERT INTO product_categories (name) VALUES (?)', (name,))
+        category_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Category "{name}" created successfully',
+            'category': {
+                'id': category_id,
+                'name': name,
+                'product_count': 0
+            }
+        }), 201
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/product-categories/<int:category_id>', methods=['GET'])
+def get_product_category(category_id):
+    """Get a single product category with its products"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Get category
+    cursor.execute('SELECT id, name FROM product_categories WHERE id = ?', (category_id,))
+    category_row = cursor.fetchone()
+    
+    if not category_row:
+        conn.close()
+        return jsonify({'error': 'Category not found'}), 404
+    
+    # Get products in this category
+    cursor.execute('''
+        SELECT id, name, sub_category, type_of_sales
+        FROM products
+        WHERE category_id = ?
+        ORDER BY name
+    ''', (category_id,))
+    
+    products = []
+    for row in cursor.fetchall():
+        products.append({
+            'id': row['id'],
+            'name': row['name'],
+            'sub_category': row['sub_category'],
+            'type_of_sales': row['type_of_sales']
+        })
+    
+    conn.close()
+    
+    return jsonify({
+        'category': {
+            'id': category_row['id'],
+            'name': category_row['name'],
+            'products': products
+        }
+    })
+
+@app.route('/api/product-categories/<int:category_id>', methods=['PUT'])
+def update_product_category(category_id):
+    """Update a product category"""
+    data = request.get_json()
+    
+    if not data or not data.get('name'):
+        return jsonify({'error': 'Category name is required'}), 400
+    
+    name = data['name'].strip()
+    
+    if not name:
+        return jsonify({'error': 'Category name cannot be empty'}), 400
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Check if category exists
+        cursor.execute('SELECT id FROM product_categories WHERE id = ?', (category_id,))
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({'error': 'Category not found'}), 404
+        
+        # Check if new name already exists (for different category)
+        cursor.execute('SELECT id FROM product_categories WHERE LOWER(name) = LOWER(?) AND id != ?', (name, category_id))
+        if cursor.fetchone():
+            conn.close()
+            return jsonify({'error': f'Category "{name}" already exists'}), 409
+        
+        cursor.execute('UPDATE product_categories SET name = ? WHERE id = ?', (name, category_id))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Category updated to "{name}"',
+            'category': {
+                'id': category_id,
+                'name': name
+            }
+        })
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/product-categories/<int:category_id>', methods=['DELETE'])
+def delete_product_category(category_id):
+    """Delete a product category (only if no products are associated)"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Check if category exists
+        cursor.execute('SELECT name FROM product_categories WHERE id = ?', (category_id,))
+        category_row = cursor.fetchone()
+        if not category_row:
+            conn.close()
+            return jsonify({'error': 'Category not found'}), 404
+        
+        category_name = category_row['name']
+        
+        # Check if category has products
+        cursor.execute('SELECT COUNT(*) as count FROM products WHERE category_id = ?', (category_id,))
+        product_count = cursor.fetchone()['count']
+        
+        if product_count > 0:
+            conn.close()
+            return jsonify({
+                'error': f'Cannot delete category "{category_name}" - it has {product_count} product(s) associated. Delete products first or reassign them to another category.'
+            }), 409
+        
+        cursor.execute('DELETE FROM product_categories WHERE id = ?', (category_id,))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Category "{category_name}" deleted successfully'
+        })
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 500
+
+# ========== PRODUCTS ENDPOINTS ==========
+
+@app.route('/api/products', methods=['GET'])
+def get_products():
+    """Get all products with optional category filter"""
+    category_id = request.args.get('category_id', type=int)
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    if category_id:
+        cursor.execute('''
+            SELECT 
+                p.id,
+                p.name,
+                p.sub_category,
+                p.type_of_sales,
+                p.category_id,
+                pc.name as category_name
+            FROM products p
+            JOIN product_categories pc ON p.category_id = pc.id
+            WHERE p.category_id = ?
+            ORDER BY p.name
+        ''', (category_id,))
+    else:
+        cursor.execute('''
+            SELECT 
+                p.id,
+                p.name,
+                p.sub_category,
+                p.type_of_sales,
+                p.category_id,
+                pc.name as category_name
+            FROM products p
+            JOIN product_categories pc ON p.category_id = pc.id
+            ORDER BY pc.name, p.name
+        ''')
+    
+    products = []
+    for row in cursor.fetchall():
+        products.append({
+            'id': row['id'],
+            'name': row['name'],
+            'sub_category': row['sub_category'],
+            'type_of_sales': row['type_of_sales'],
+            'category_id': row['category_id'],
+            'category_name': row['category_name']
+        })
+    
+    conn.close()
+    return jsonify({'products': products})
+
+@app.route('/api/products', methods=['POST'])
+def create_product():
+    """Create a new product"""
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    
+    name = (data.get('name') or '').strip()
+    category_id = data.get('category_id')
+    sub_category_raw = data.get('sub_category')
+    type_of_sales_raw = data.get('type_of_sales')
+    
+    # Handle None values safely
+    sub_category = sub_category_raw.strip() if sub_category_raw else None
+    type_of_sales = type_of_sales_raw.strip() if type_of_sales_raw else None
+    
+    if not name:
+        return jsonify({'error': 'Product name is required'}), 400
+    
+    if not category_id:
+        return jsonify({'error': 'Category is required'}), 400
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Check if category exists
+        cursor.execute('SELECT name FROM product_categories WHERE id = ?', (category_id,))
+        category_row = cursor.fetchone()
+        if not category_row:
+            conn.close()
+            return jsonify({'error': 'Category not found'}), 404
+        
+        # Check if product already exists in this category
+        cursor.execute('SELECT id FROM products WHERE LOWER(name) = LOWER(?) AND category_id = ?', (name, category_id))
+        if cursor.fetchone():
+            conn.close()
+            return jsonify({'error': f'Product "{name}" already exists in category "{category_row["name"]}"'}), 409
+        
+        cursor.execute('''
+            INSERT INTO products (name, category_id, sub_category, type_of_sales)
+            VALUES (?, ?, ?, ?)
+        ''', (name, category_id, sub_category, type_of_sales))
+        product_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Product "{name}" created successfully',
+            'product': {
+                'id': product_id,
+                'name': name,
+                'category_id': category_id,
+                'category_name': category_row['name'],
+                'sub_category': sub_category,
+                'type_of_sales': type_of_sales
+            }
+        }), 201
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/products/<int:product_id>', methods=['PUT'])
+def update_product(product_id):
+    """Update a product"""
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Check if product exists
+        cursor.execute('SELECT id, name, category_id FROM products WHERE id = ?', (product_id,))
+        product_row = cursor.fetchone()
+        if not product_row:
+            conn.close()
+            return jsonify({'error': 'Product not found'}), 404
+        
+        # Build update query dynamically
+        updates = []
+        params = []
+        
+        if 'name' in data:
+            name = data['name'].strip()
+            if not name:
+                conn.close()
+                return jsonify({'error': 'Product name cannot be empty'}), 400
+            updates.append('name = ?')
+            params.append(name)
+        
+        if 'category_id' in data:
+            category_id = data['category_id']
+            cursor.execute('SELECT id FROM product_categories WHERE id = ?', (category_id,))
+            if not cursor.fetchone():
+                conn.close()
+                return jsonify({'error': 'Category not found'}), 404
+            updates.append('category_id = ?')
+            params.append(category_id)
+        
+        if 'sub_category' in data:
+            updates.append('sub_category = ?')
+            params.append(data['sub_category'].strip() if data['sub_category'] else None)
+        
+        if 'type_of_sales' in data:
+            updates.append('type_of_sales = ?')
+            params.append(data['type_of_sales'].strip() if data['type_of_sales'] else None)
+        
+        if not updates:
+            conn.close()
+            return jsonify({'error': 'No fields to update'}), 400
+        
+        params.append(product_id)
+        cursor.execute(f'UPDATE products SET {', '.join(updates)} WHERE id = ?', params)
+        conn.commit()
+        
+        # Get updated product
+        cursor.execute('''
+            SELECT p.*, pc.name as category_name
+            FROM products p
+            JOIN product_categories pc ON p.category_id = pc.id
+            WHERE p.id = ?
+        ''', (product_id,))
+        updated = cursor.fetchone()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Product updated successfully',
+            'product': {
+                'id': updated['id'],
+                'name': updated['name'],
+                'category_id': updated['category_id'],
+                'category_name': updated['category_name'],
+                'sub_category': updated['sub_category'],
+                'type_of_sales': updated['type_of_sales']
+            }
+        })
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/products/<int:product_id>', methods=['DELETE'])
+def delete_product(product_id):
+    """Delete a product (only if no data is associated)"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Check if product exists
+        cursor.execute('SELECT name FROM products WHERE id = ?', (product_id,))
+        product_row = cursor.fetchone()
+        if not product_row:
+            conn.close()
+            return jsonify({'error': 'Product not found'}), 404
+        
+        product_name = product_row['name']
+        
+        # Check if product has associated data
+        cursor.execute('SELECT COUNT(*) as count FROM sales_data WHERE product_id = ?', (product_id,))
+        sales_count = cursor.fetchone()['count']
+        
+        cursor.execute('SELECT COUNT(*) as count FROM production_data WHERE product_id = ?', (product_id,))
+        production_count = cursor.fetchone()['count']
+        
+        cursor.execute('SELECT COUNT(*) as count FROM budget_projection WHERE product_id = ?', (product_id,))
+        budget_count = cursor.fetchone()['count']
+        
+        total_refs = sales_count + production_count + budget_count
+        
+        if total_refs > 0:
+            conn.close()
+            return jsonify({
+                'error': f'Cannot delete product "{product_name}" - it has {total_refs} data record(s) associated (sales: {sales_count}, production: {production_count}, budget: {budget_count}). Delete data first.'
+            }), 409
+        
+        cursor.execute('DELETE FROM products WHERE id = ?', (product_id,))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Product "{product_name}" deleted successfully'
+        })
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""

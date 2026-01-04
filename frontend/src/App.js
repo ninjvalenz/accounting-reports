@@ -12,6 +12,7 @@ import SalesByLocationSalesman from './components/SalesByLocationSalesman';
 import SalesByType from './components/SalesByType';
 import CostAnalysis from './components/CostAnalysis';
 import UploadHistory from './components/UploadHistory';
+import ProductCategoryMaintenance from './components/ProductCategoryMaintenance';
 
 const API_BASE_URL = 'http://localhost:5001/api';
 
@@ -76,6 +77,7 @@ function App() {
 
   const goToHistory = () => setCurrentPage('history');
   const goToDashboard = () => setCurrentPage('dashboard');
+  const goToMaintenance = () => setCurrentPage('maintenance');
 
   return (
     <div className="app">
@@ -93,6 +95,12 @@ function App() {
             onClick={goToHistory}
           >
             📁 Upload History
+          </button>
+          <button 
+            className={`nav-btn ${currentPage === 'maintenance' ? 'active' : ''}`}
+            onClick={goToMaintenance}
+          >
+            ⚙️ Maintenance
           </button>
         </nav>
       </header>
@@ -164,6 +172,12 @@ function App() {
           <UploadHistory 
             onBack={goToDashboard} 
             onDataChange={handleHistoryChange}
+          />
+        )}
+
+        {currentPage === 'maintenance' && (
+          <ProductCategoryMaintenance 
+            onBack={goToDashboard}
           />
         )}
       </main>
