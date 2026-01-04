@@ -792,6 +792,115 @@ def get_yoy_growth():
         'totals': totals
     })
 
+@app.route('/api/mom-growth', methods=['GET'])
+def get_mom_growth():
+    """Get MoM (Month over Month) Growth data from latest upload
+    
+    Shows monthly sales data with quantity by category, total qty, sales amount,
+    and MoM growth percentage.
+    """
+    year = request.args.get('year', 2025, type=int)
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Get latest upload ID
+    latest_upload_id = get_latest_upload_id()
+    if not latest_upload_id:
+        conn.close()
+        return jsonify({'error': 'No data available. Please upload an Excel file first.'}), 404
+    
+    # Get year_id
+    cursor.execute('SELECT id FROM years WHERE year = ?', (year,))
+    year_row = cursor.fetchone()
+    if not year_row:
+        conn.close()
+        return jsonify({'error': f'Year {year} not found'}), 404
+    year_id = year_row['id']
+    
+    # Get all categories
+    cursor.execute('''
+        SELECT DISTINCT pc.id, pc.name 
+        FROM product_categories pc
+        JOIN products p ON pc.id = p.category_id
+        JOIN sales_data sd ON p.id = sd.product_id
+        WHERE sd.upload_id = ? AND sd.year_id = ?
+        ORDER BY pc.name
+    ''', (latest_upload_id, year_id))
+    categories = [{'id': row['id'], 'name': row['name']} for row in cursor.fetchall()]
+    category_names = [c['name'] for c in categories]
+    
+    # Get monthly data grouped by month and category
+    cursor.execute('''
+        SELECT 
+            m.month_number,
+            m.name as month_name,
+            pc.name as category,
+            COALESCE(SUM(sd.qty_actual), 0) as qty_actual,
+            COALESCE(SUM(sd.amount_actual), 0) as amount_actual
+        FROM sales_data sd
+        JOIN products p ON sd.product_id = p.id
+        JOIN product_categories pc ON p.category_id = pc.id
+        JOIN months m ON sd.month_id = m.id
+        WHERE sd.year_id = ? AND sd.upload_id = ?
+        GROUP BY m.month_number, m.name, pc.name
+        ORDER BY m.month_number, pc.name
+    ''', (year_id, latest_upload_id))
+    
+    # Organize data by month
+    month_data = {}
+    for row in cursor.fetchall():
+        month_num = row['month_number']
+        month_name = row['month_name']
+        category = row['category']
+        qty = row['qty_actual']
+        amount = row['amount_actual']
+        
+        if month_num not in month_data:
+            month_data[month_num] = {
+                'month': month_name,
+                'month_number': month_num,
+                'qty_by_category': {c: 0 for c in category_names},
+                'total_qty': 0,
+                'sales_amount': 0
+            }
+        
+        month_data[month_num]['qty_by_category'][category] = qty
+        month_data[month_num]['total_qty'] += qty
+        month_data[month_num]['sales_amount'] += amount
+    
+    conn.close()
+    
+    # Convert to sorted list and calculate MoM growth
+    months_list = []
+    prev_amount = None
+    
+    for month_num in sorted(month_data.keys()):
+        m = month_data[month_num]
+        entry = {
+            'month': m['month'],
+            'month_short': m['month'][:3] + "'" + str(year)[2:],
+            'qty_by_category': {k: round(v, 2) for k, v in m['qty_by_category'].items()},
+            'total_qty': round(m['total_qty'], 2),
+            'sales_amount': round(m['sales_amount'], 2),
+            'mom_growth_pct': None
+        }
+        
+        # Calculate MoM growth
+        if prev_amount is not None and prev_amount > 0:
+            growth = ((m['sales_amount'] - prev_amount) / prev_amount) * 100
+            entry['mom_growth_pct'] = round(growth, 2)
+        
+        prev_amount = m['sales_amount']
+        months_list.append(entry)
+    
+    return jsonify({
+        'year': year,
+        'upload_id': latest_upload_id,
+        'categories': category_names,
+        'months': months_list
+    })
+
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""

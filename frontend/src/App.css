@@ -648,6 +648,19 @@
   font-weight: 600;
 }
 
+/* MoM Growth Table */
+.mom-table-container {
+  overflow-x: auto;
+}
+
+.mom-table {
+  min-width: 800px;
+}
+
+.mom-table th {
+  white-space: nowrap;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .app-header {

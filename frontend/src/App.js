@@ -7,6 +7,7 @@ import ComparisonProduction from './components/ComparisonProduction';
 import SalesCategoryWise from './components/SalesCategoryWise';
 import ProductionCategoryWise from './components/ProductionCategoryWise';
 import YoYGrowth from './components/YoYGrowth';
+import MoMGrowth from './components/MoMGrowth';
 import UploadHistory from './components/UploadHistory';
 
 const API_BASE_URL = 'http://localhost:5001/api';
@@ -127,6 +128,10 @@ function App() {
                 />
                 <YoYGrowth 
                   key={`yoy-${refreshKey}`}
+                  availableMonths={availableMonths} 
+                />
+                <MoMGrowth 
+                  key={`mom-${refreshKey}`}
                   availableMonths={availableMonths} 
                 />
               </div>
