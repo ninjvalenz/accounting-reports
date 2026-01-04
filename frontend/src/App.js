@@ -5,6 +5,7 @@ import FileUpload from './components/FileUpload';
 import ComparisonSales from './components/ComparisonSales';
 import ComparisonProduction from './components/ComparisonProduction';
 import SalesCategoryWise from './components/SalesCategoryWise';
+import ProductionCategoryWise from './components/ProductionCategoryWise';
 import UploadHistory from './components/UploadHistory';
 
 const API_BASE_URL = 'http://localhost:5001/api';
@@ -117,6 +118,10 @@ function App() {
                 />
                 <SalesCategoryWise 
                   key={`sales-cat-${refreshKey}`}
+                  availableMonths={availableMonths} 
+                />
+                <ProductionCategoryWise 
+                  key={`prod-cat-${refreshKey}`}
                   availableMonths={availableMonths} 
                 />
               </div>
