@@ -1634,7 +1634,8 @@ def update_product(product_id):
             return jsonify({'error': 'No fields to update'}), 400
         
         params.append(product_id)
-        cursor.execute(f'UPDATE products SET {', '.join(updates)} WHERE id = ?', params)
+        update_sql = 'UPDATE products SET ' + ', '.join(updates) + ' WHERE id = ?'
+        cursor.execute(update_sql, params)
         conn.commit()
         
         # Get updated product
