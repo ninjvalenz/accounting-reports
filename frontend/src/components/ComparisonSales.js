@@ -18,20 +18,22 @@ function ComparisonSales({ availableMonths }) {
 
   // Set default year and month when availableMonths changes
   useEffect(() => {
-    if (availableMonths && availableMonths.length > 0) {
+    if (availableMonths && availableMonths.length > 0 && !selectedYear) {
       // Default to first year (most recent)
-      if (!selectedYear) {
-        setSelectedYear(availableMonths[0].year);
-      }
+      setSelectedYear(availableMonths[0].year);
     }
-  }, [availableMonths, selectedYear]);
+  }, [availableMonths]);
 
-  // Set default month when year changes
+  // Set default month when year changes or initially
   useEffect(() => {
     if (selectedYear && monthsForYear.length > 0) {
-      // Default to July if available, otherwise first month
-      const july = monthsForYear.find(m => m.month === 'July');
-      setSelectedMonth(july ? july.month : monthsForYear[0].month);
+      // Only set default if no month is selected or if current month is not in the list
+      const isCurrentMonthValid = monthsForYear.some(m => m.month === selectedMonth);
+      if (!selectedMonth || !isCurrentMonthValid) {
+        // Default to July if available, otherwise first month
+        const july = monthsForYear.find(m => m.month === 'July');
+        setSelectedMonth(july ? july.month : monthsForYear[0].month);
+      }
     }
   }, [selectedYear, monthsForYear]);
 
@@ -61,8 +63,9 @@ function ComparisonSales({ availableMonths }) {
   }, [fetchData]);
 
   const handleYearChange = (e) => {
-    setSelectedYear(parseInt(e.target.value));
-    setSelectedMonth(null); // Reset month when year changes
+    const newYear = parseInt(e.target.value);
+    setSelectedYear(newYear);
+    // Month will be auto-selected by useEffect based on availability
   };
 
   const handleMonthChange = (e) => {
