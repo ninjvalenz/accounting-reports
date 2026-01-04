@@ -14,7 +14,7 @@ import CostAnalysis from './components/CostAnalysis';
 import UploadHistory from './components/UploadHistory';
 import ProductCategoryMaintenance from './components/ProductCategoryMaintenance';
 
-const API_BASE_URL = 'http://localhost:5001/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
 
 function App() {
   const [currentPage, setCurrentPage] = useState('dashboard');

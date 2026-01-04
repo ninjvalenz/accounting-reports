@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
-const API_BASE_URL = 'http://localhost:5001/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
 
 // Colors for the pie chart
 const COLORS = ['#3182ce', '#ed8936', '#48bb78', '#ecc94b', '#9f7aea', '#ed64a6', '#38b2ac', '#fc8181'];
